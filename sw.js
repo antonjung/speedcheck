@@ -1,4 +1,4 @@
-const CACHE_NAME = "speedcheck-1.0.2"; // kept in sync with VERSION / BUILD_VERSION by deploy.sh on every deploy
+const CACHE_NAME = "speedcheck-1.0.3"; // kept in sync with VERSION / BUILD_VERSION by deploy.sh on every deploy
 const PRECACHE_URLS = [
   "index.html",
   "style.css",

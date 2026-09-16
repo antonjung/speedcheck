@@ -2,7 +2,7 @@
 
 // ---------- Config ----------
 
-const BUILD_VERSION = "1.0.2"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
+const BUILD_VERSION = "1.0.3"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_KMH = 3.6;
 const MPS_TO_MPH = 2.2369362920544;
@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
   voiceAnnounce: true,
   wakeLock: true,
   speedLimit: null, // number, in `unit`
+  testMode: false, // drive speed manually instead of via GPS, for exercising warnings
 };
 
 function loadSettings() {
@@ -40,6 +41,8 @@ const startScreen = document.getElementById("startScreen");
 const startBtn = document.getElementById("startBtn");
 const startError = document.getElementById("startError");
 const permLocation = document.getElementById("permLocation");
+const settingsBtnStart = document.getElementById("settingsBtnStart");
+const testModeBadge = document.getElementById("testModeBadge");
 const buildVersionEl = document.getElementById("buildVersion");
 buildVersionEl.textContent = `build ${BUILD_VERSION}`;
 
@@ -60,6 +63,12 @@ const manualLimitInput = document.getElementById("manualLimitInput");
 const manualSetBtn = document.getElementById("manualSetBtn");
 const manualClearBtn = document.getElementById("manualClearBtn");
 
+const testControls = document.getElementById("testControls");
+const testSpeedSlider = document.getElementById("testSpeedSlider");
+const testPresetUnder = document.getElementById("testPresetUnder");
+const testPresetAt = document.getElementById("testPresetAt");
+const testPresetOver = document.getElementById("testPresetOver");
+
 const settingsPanel = document.getElementById("settingsPanel");
 const settingsCloseBtn = document.getElementById("settingsCloseBtn");
 const unitSegmented = document.getElementById("unitSegmented");
@@ -68,6 +77,7 @@ const valWarnBuffer = document.getElementById("valWarnBuffer");
 const setSoundAlerts = document.getElementById("setSoundAlerts");
 const setVoiceAnnounce = document.getElementById("setVoiceAnnounce");
 const setWakeLock = document.getElementById("setWakeLock");
+const setTestMode = document.getElementById("setTestMode");
 
 // ---------- State ----------
 
@@ -96,6 +106,10 @@ function unitLabel(unit) {
   return unit === "mph" ? "mph" : "km/h";
 }
 
+function unitToMps(value, unit) {
+  return unit === "mph" ? value / MPS_TO_MPH : value / MPS_TO_KMH;
+}
+
 // ---------- Geodesy fallback (when coords.speed is unavailable) ----------
 
 function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -121,6 +135,10 @@ function renderSpeed() {
 function renderLimit() {
   limitValueEl.textContent =
     settings.speedLimit == null ? "—" : `${settings.speedLimit} ${unitLabel(settings.unit)}`;
+  const noLimit = settings.speedLimit == null;
+  testPresetUnder.disabled = noLimit;
+  testPresetAt.disabled = noLimit;
+  testPresetOver.disabled = noLimit;
 }
 
 function renderGpsInfo(accuracyM) {
@@ -276,12 +294,25 @@ function onPositionError(err) {
 }
 
 function startTracking() {
+  if (settings.testMode) {
+    startTestTracking();
+    return;
+  }
   if (watchId != null) return;
   watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
     enableHighAccuracy: true,
     maximumAge: 0,
     timeout: 10000,
   });
+  requestWakeLock();
+}
+
+function startTestTracking() {
+  gpsInfo.textContent = "TEST MODE";
+  gpsInfo.classList.add("test-mode");
+  hasSpeedFix = true;
+  renderSpeed();
+  updateStatus();
   requestWakeLock();
 }
 
@@ -478,6 +509,7 @@ function handleTranscript(transcript) {
     renderSpeed();
     renderLimit();
     updateStatus();
+    syncTestSlider();
     speak(`Switched to ${unitLabel(cmd.unit)}.`);
   } else if (cmd.type === "limit") {
     setSpeedLimit(cmd.value, cmd.unit);
@@ -587,10 +619,12 @@ function openSettings() {
   setSoundAlerts.checked = settings.soundAlerts;
   setVoiceAnnounce.checked = settings.voiceAnnounce;
   setWakeLock.checked = settings.wakeLock;
+  setTestMode.checked = settings.testMode;
   settingsPanel.hidden = false;
 }
 
 settingsBtn.addEventListener("click", openSettings);
+settingsBtnStart.addEventListener("click", openSettings);
 settingsCloseBtn.addEventListener("click", () => {
   settingsPanel.hidden = true;
 });
@@ -604,6 +638,7 @@ unitSegmented.addEventListener("click", (e) => {
   renderSpeed();
   renderLimit();
   updateStatus();
+  syncTestSlider();
 });
 
 setWarnBuffer.addEventListener("input", () => {
@@ -629,6 +664,74 @@ setWakeLock.addEventListener("change", () => {
   saveSettings();
   if (settings.wakeLock && watchId != null) requestWakeLock();
   else releaseWakeLock();
+});
+
+// ---------- Test mode ----------
+
+function applyTestModeUI() {
+  testControls.hidden = !settings.testMode;
+  testModeBadge.hidden = !(settings.testMode && startScreen.hidden === false);
+  if (settings.testMode) syncTestSlider();
+}
+
+function syncTestSlider() {
+  if (!settings.testMode) return;
+  testSpeedSlider.value = String(Math.round(mpsToUnit(displaySpeedMps, settings.unit)));
+}
+
+function setTestSpeedToUnit(value) {
+  const clamped = Math.max(0, Math.min(200, value));
+  testSpeedSlider.value = String(clamped);
+  displaySpeedMps = unitToMps(clamped, settings.unit);
+  hasSpeedFix = true;
+  renderSpeed();
+  updateStatus();
+}
+
+testSpeedSlider.addEventListener("input", () => {
+  displaySpeedMps = unitToMps(parseFloat(testSpeedSlider.value), settings.unit);
+  hasSpeedFix = true;
+  renderSpeed();
+  updateStatus();
+});
+
+testPresetUnder.addEventListener("click", () => {
+  if (settings.speedLimit == null) return;
+  setTestSpeedToUnit(settings.speedLimit - 5);
+});
+testPresetAt.addEventListener("click", () => {
+  if (settings.speedLimit == null) return;
+  setTestSpeedToUnit(settings.speedLimit);
+});
+testPresetOver.addEventListener("click", () => {
+  if (settings.speedLimit == null) return;
+  setTestSpeedToUnit(settings.speedLimit + 5);
+});
+
+setTestMode.addEventListener("change", () => {
+  const wasTestMode = settings.testMode;
+  settings.testMode = setTestMode.checked;
+  saveSettings();
+
+  if (mainView.hidden === false && wasTestMode !== settings.testMode) {
+    if (settings.testMode) {
+      // Switch live from real GPS to manual test control, keeping continuity.
+      if (watchId != null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      startTestTracking();
+    } else {
+      // Switch back to real GPS; wait for a fresh fix before trusting the reading.
+      gpsInfo.classList.remove("test-mode");
+      gpsInfo.textContent = "GPS —";
+      hasSpeedFix = false;
+      updateStatus();
+      startTracking();
+    }
+  }
+
+  applyTestModeUI();
 });
 
 // ---------- Start / stop ----------
@@ -674,6 +777,13 @@ function describeGeoError(err) {
 
 startBtn.addEventListener("click", async () => {
   startError.hidden = true;
+
+  if (settings.testMode) {
+    ensureAudioCtx(); // unlock audio on this user gesture
+    enterMainView();
+    return;
+  }
+
   if (!("geolocation" in navigator)) {
     startError.textContent = "This browser doesn't support geolocation.";
     startError.hidden = false;
@@ -717,6 +827,7 @@ function enterMainView() {
   startScreen.hidden = true;
   mainView.hidden = false;
   applyUnitUI();
+  applyTestModeUI();
   statusPanel.dataset.status = currentStatus;
   renderSpeed();
   renderLimit();
@@ -733,7 +844,12 @@ stopBtn.addEventListener("click", () => {
   hasSpeedFix = false;
   lastPosition = null;
   transcriptEl.textContent = "";
+  gpsInfo.classList.remove("test-mode");
+  testSpeedSlider.value = "0";
+  applyTestModeUI();
 });
+
+applyTestModeUI(); // reflect a persisted test-mode setting on the start screen badge
 
 // ---------- Service worker ----------
 

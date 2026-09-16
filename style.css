@@ -39,8 +39,10 @@ button {
 }
 
 .btn.primary { background: var(--accent); color: #05131f; }
+.btn.secondary { background: transparent; color: var(--muted); border: 1px solid rgba(255, 255, 255, 0.12); }
 .btn.small { padding: 0.55rem 0.9rem; font-size: 0.9rem; }
 .btn.danger { color: var(--danger); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn.icon-btn {
   width: 3rem;
   height: 3rem;
@@ -104,6 +106,17 @@ button {
   color: var(--danger);
   font-size: 0.9rem;
   max-width: 34ch;
+}
+
+.test-mode-badge {
+  color: var(--warn);
+  font-size: 0.85rem;
+  max-width: 34ch;
+  line-height: 1.4;
+}
+
+.start-screen #settingsBtnStart {
+  margin-top: 0.3rem;
 }
 
 .hint {
@@ -268,6 +281,32 @@ button {
   font-size: 1rem;
   min-width: 0;
 }
+
+.test-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.2rem 0.2rem 0.9rem;
+}
+
+.test-controls-label {
+  color: var(--warn);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+#testSpeedSlider { width: 100%; }
+
+.test-presets {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.test-presets .btn { flex: 1; }
+
+.gps-info.test-mode { color: var(--warn); font-weight: 700; }
 
 .transcript {
   color: var(--muted);

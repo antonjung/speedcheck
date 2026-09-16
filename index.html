@@ -30,6 +30,9 @@
 
   <button id="startBtn" class="btn primary">Start</button>
   <p id="startError" class="start-error" hidden></p>
+  <p id="testModeBadge" class="test-mode-badge" hidden>Test mode is on &mdash; GPS won't be used, you'll drive the speed manually.</p>
+
+  <button id="settingsBtnStart" class="btn secondary">Settings</button>
 
   <p class="hint">Mount your phone where you can glance at it. Speak a limit any time, e.g. &ldquo;fifty&rdquo; or &ldquo;speed limit is thirty&rdquo;.</p>
   <p class="build-version" id="buildVersion"></p>
@@ -64,6 +67,16 @@
     <input type="number" id="manualLimitInput" inputmode="numeric" min="1" max="300" placeholder="Set limit manually" />
     <button id="manualSetBtn" class="btn small">Set</button>
     <button id="manualClearBtn" class="btn small">Clear</button>
+  </div>
+
+  <div id="testControls" class="test-controls" hidden>
+    <span class="test-controls-label">Test speed</span>
+    <input type="range" id="testSpeedSlider" min="0" max="200" step="1" value="0" aria-label="Test speed" />
+    <div class="test-presets">
+      <button id="testPresetUnder" type="button" class="btn small">Limit &minus;5</button>
+      <button id="testPresetAt" type="button" class="btn small">At limit</button>
+      <button id="testPresetOver" type="button" class="btn small">Limit +5</button>
+    </div>
   </div>
 
   <p id="transcript" class="transcript" aria-live="polite"></p>
@@ -102,6 +115,12 @@
       <span class="setting-label">Keep screen awake</span>
       <input type="checkbox" id="setWakeLock" />
     </label>
+
+    <label class="setting-row checkbox-row">
+      <span class="setting-label">Test mode</span>
+      <input type="checkbox" id="setTestMode" />
+    </label>
+    <span class="setting-help test-mode-help">Drive the speed with a slider instead of GPS, so you can check the warnings without a car.</span>
 
     <div class="settings-actions">
       <button id="settingsCloseBtn" class="btn primary">Done</button>
