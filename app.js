@@ -2,14 +2,14 @@
 
 // ---------- Config ----------
 
-const BUILD_VERSION = "1.0.4"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
+const BUILD_VERSION = "1.0.5"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_KMH = 3.6;
 const MPS_TO_MPH = 2.2369362920544;
 const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
 const RECOGNITION_RESTART_DELAY_MS = 300;
-const MAX_BONG_INTERVAL_MS = 900; // beep rate just as you enter the warn band
-const MIN_BONG_INTERVAL_MS = 160; // beep rate right at the limit, just before it goes solid
+const MAX_BONG_INTERVAL_MS = 3000; // bong rate just as you enter the warn band - "every few seconds"
+const MIN_BONG_INTERVAL_MS = 150; // bong rate right at the limit, just before it goes solid
 
 const DEFAULT_SETTINGS = {
   unit: "kmh", // 'kmh' | 'mph'
@@ -205,8 +205,10 @@ function onStatusTransition(prev, next) {
 
 // ---------- Audio: proximity alert ----------
 //
-// A soft two-partial "bong" (like a mellow bell) repeats faster the closer
-// the current speed gets to the limit within the warn band, then becomes an
+// A deep, resonant "bong" (like a temple bell/gong, not a bright ding)
+// repeats faster the closer the current speed gets to the limit within the
+// warn band - starting around once every few seconds just inside the band,
+// down to several times a second right at the edge - then becomes an
 // unbroken sustained tone once at or over the limit. The pitch never
 // changes - only the repeat rate does - so it reads as urgency, not alarm.
 
@@ -219,10 +221,14 @@ function ensureAudioCtx() {
   return audioCtx;
 }
 
-const BONG_FUNDAMENTAL_HZ = 660;
+const BONG_FUNDAMENTAL_HZ = 196; // G3 - low and resonant, reads as a "bong" rather than a chime
+// Inharmonic-ish partials modeled loosely on a struck bell/gong: the
+// fundamental rings the longest, higher partials give the initial "strike"
+// and decay away quickly, leaving a warm hum.
 const BONG_PARTIALS = [
-  { ratio: 1, gain: 0.22 },
-  { ratio: 2.01, gain: 0.11 }, // slightly detuned octave gives it a bell-like shimmer
+  { ratio: 1, gain: 0.32, decay: 0.9 },
+  { ratio: 2.76, gain: 0.14, decay: 0.5 },
+  { ratio: 4.07, gain: 0.07, decay: 0.28 },
 ];
 
 function playBong() {
@@ -230,17 +236,17 @@ function playBong() {
   const ctx = ensureAudioCtx();
   if (!ctx) return;
   const now = ctx.currentTime;
-  for (const { ratio, gain: peakGain } of BONG_PARTIALS) {
+  for (const { ratio, gain: peakGain, decay } of BONG_PARTIALS) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
     osc.frequency.value = BONG_FUNDAMENTAL_HZ * ratio;
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(peakGain, now + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + decay);
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
-    osc.stop(now + 0.42);
+    osc.stop(now + decay + 0.02);
   }
 }
 
