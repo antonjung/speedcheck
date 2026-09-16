@@ -2,7 +2,7 @@
 
 // ---------- Config ----------
 
-const BUILD_VERSION = "1.0.1"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
+const BUILD_VERSION = "1.0.2"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_KMH = 3.6;
 const MPS_TO_MPH = 2.2369362920544;
