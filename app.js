@@ -2,13 +2,14 @@
 
 // ---------- Config ----------
 
-const BUILD_VERSION = "1.0.3"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
+const BUILD_VERSION = "1.0.4"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_KMH = 3.6;
 const MPS_TO_MPH = 2.2369362920544;
 const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
-const EXCEED_BEEP_INTERVAL_MS = 1500;
 const RECOGNITION_RESTART_DELAY_MS = 300;
+const MAX_BONG_INTERVAL_MS = 900; // beep rate just as you enter the warn band
+const MIN_BONG_INTERVAL_MS = 160; // beep rate right at the limit, just before it goes solid
 
 const DEFAULT_SETTINGS = {
   unit: "kmh", // 'kmh' | 'mph'
@@ -94,7 +95,6 @@ let micEnabled = false;
 let recognitionShouldRun = false;
 
 let audioCtx = null;
-let beepTimer = null;
 
 // ---------- Unit helpers ----------
 
@@ -195,16 +195,20 @@ function updateStatus() {
 function onStatusTransition(prev, next) {
   if (next === "exceeding") {
     speak("Warning. Speed limit exceeded.");
-    startBeepLoop();
+    startAlertLoop();
+  } else if (next === "approaching") {
+    startAlertLoop();
   } else {
-    stopBeepLoop();
-    if (next === "approaching" && prev === "ok") {
-      beepOnce();
-    }
+    stopAlertLoop();
   }
 }
 
-// ---------- Audio: beeps ----------
+// ---------- Audio: proximity alert ----------
+//
+// A soft two-partial "bong" (like a mellow bell) repeats faster the closer
+// the current speed gets to the limit within the warn band, then becomes an
+// unbroken sustained tone once at or over the limit. The pitch never
+// changes - only the repeat rate does - so it reads as urgency, not alarm.
 
 function ensureAudioCtx() {
   if (!audioCtx) {
@@ -215,33 +219,105 @@ function ensureAudioCtx() {
   return audioCtx;
 }
 
-function beepOnce(freq = 880, durationMs = 180) {
+const BONG_FUNDAMENTAL_HZ = 660;
+const BONG_PARTIALS = [
+  { ratio: 1, gain: 0.22 },
+  { ratio: 2.01, gain: 0.11 }, // slightly detuned octave gives it a bell-like shimmer
+];
+
+function playBong() {
   if (!settings.soundAlerts) return;
   const ctx = ensureAudioCtx();
   if (!ctx) return;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = "square";
-  osc.frequency.value = freq;
-  gain.gain.value = 0.15;
-  osc.connect(gain).connect(ctx.destination);
-  osc.start();
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationMs / 1000);
-  osc.stop(ctx.currentTime + durationMs / 1000 + 0.02);
-}
-
-function startBeepLoop() {
-  if (beepTimer) return;
-  if (!settings.soundAlerts) return;
-  beepOnce(1046, 220);
-  beepTimer = setInterval(() => beepOnce(1046, 220), EXCEED_BEEP_INTERVAL_MS);
-}
-
-function stopBeepLoop() {
-  if (beepTimer) {
-    clearInterval(beepTimer);
-    beepTimer = null;
+  const now = ctx.currentTime;
+  for (const { ratio, gain: peakGain } of BONG_PARTIALS) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = BONG_FUNDAMENTAL_HZ * ratio;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(peakGain, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.42);
   }
+}
+
+let exceedToneNodes = null;
+
+function startExceedTone() {
+  if (exceedToneNodes || !settings.soundAlerts) return;
+  const ctx = ensureAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  exceedToneNodes = BONG_PARTIALS.map(({ ratio, gain: peakGain }) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = BONG_FUNDAMENTAL_HZ * ratio;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(peakGain * 0.8, now + 0.15);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    return { osc, gain };
+  });
+}
+
+function stopExceedTone() {
+  if (!exceedToneNodes) return;
+  const ctx = audioCtx;
+  const now = ctx ? ctx.currentTime : 0;
+  for (const { osc, gain } of exceedToneNodes) {
+    try {
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0.0001, now + 0.12);
+      osc.stop(now + 0.15);
+    } catch (err) {
+      /* already stopped */
+    }
+  }
+  exceedToneNodes = null;
+}
+
+let alertTimer = null;
+
+function alertTick() {
+  alertTimer = null;
+
+  if (currentStatus === "exceeding") {
+    startExceedTone();
+    return;
+  }
+  stopExceedTone();
+
+  if (currentStatus !== "approaching" || settings.speedLimit == null) return;
+
+  const currentInUnit = mpsToUnit(displaySpeedMps, settings.unit);
+  const warnThreshold = settings.speedLimit * (1 - settings.warnBufferPercent / 100);
+  const span = Math.max(0.001, settings.speedLimit - warnThreshold);
+  const proximity = Math.min(1, Math.max(0, (currentInUnit - warnThreshold) / span));
+  const interval = MAX_BONG_INTERVAL_MS - (MAX_BONG_INTERVAL_MS - MIN_BONG_INTERVAL_MS) * proximity;
+
+  playBong();
+  alertTimer = setTimeout(alertTick, interval);
+}
+
+function startAlertLoop() {
+  if (alertTimer) {
+    clearTimeout(alertTimer);
+    alertTimer = null;
+  }
+  alertTick();
+}
+
+function stopAlertLoop() {
+  if (alertTimer) {
+    clearTimeout(alertTimer);
+    alertTimer = null;
+  }
+  stopExceedTone();
 }
 
 // ---------- Speech synthesis ----------
@@ -322,7 +398,7 @@ function stopTracking() {
     watchId = null;
   }
   releaseWakeLock();
-  stopBeepLoop();
+  stopAlertLoop();
   stopRecognition();
 }
 
@@ -651,7 +727,11 @@ setWarnBuffer.addEventListener("input", () => {
 setSoundAlerts.addEventListener("change", () => {
   settings.soundAlerts = setSoundAlerts.checked;
   saveSettings();
-  if (!settings.soundAlerts) stopBeepLoop();
+  if (!settings.soundAlerts) {
+    stopAlertLoop();
+  } else if (currentStatus === "approaching" || currentStatus === "exceeding") {
+    startAlertLoop();
+  }
 });
 
 setVoiceAnnounce.addEventListener("change", () => {
@@ -833,6 +913,7 @@ function enterMainView() {
   renderLimit();
   renderStatusMessage();
   startTracking();
+  startRecognition(); // listen for spoken limits from the moment you're on the road
 }
 
 stopBtn.addEventListener("click", () => {
