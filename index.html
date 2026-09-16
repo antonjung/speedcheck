@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Speed Guard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0e14" />
+<meta name="description" content="Tracks your driving speed via GPS and warns you when you're near or over a speed limit you set by voice." />
+
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="favicon-32.png" sizes="32x32" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="SpeedGuard" />
+
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<main id="startScreen" class="start-screen">
+  <img src="icon-192.png" alt="" class="logo" />
+  <h1>Speed Guard</h1>
+  <p class="subtitle">Tracks your speed by GPS. Just say the speed limit out loud and it'll warn you if you get close or go over.</p>
+
+  <ul class="permission-list">
+    <li id="permLocation" data-state="pending"><span class="dot"></span> Location &mdash; to measure your speed</li>
+    <li id="permMic" data-state="optional"><span class="dot"></span> Microphone &mdash; optional, lets you set limits by voice</li>
+  </ul>
+
+  <button id="startBtn" class="btn primary">Start</button>
+  <p id="startError" class="start-error" hidden></p>
+
+  <p class="hint">Mount your phone where you can glance at it. Speak a limit any time, e.g. &ldquo;fifty&rdquo; or &ldquo;speed limit is thirty&rdquo;.</p>
+  <p class="build-version" id="buildVersion"></p>
+</main>
+
+<div id="mainView" class="main-view" hidden>
+
+  <div class="top-bar">
+    <button id="settingsBtn" class="btn icon-btn" aria-label="Settings">&#9881;</button>
+    <div id="gpsInfo" class="gps-info">GPS &mdash;</div>
+    <button id="stopBtn" class="btn icon-btn danger" aria-label="Stop">&#9209;</button>
+  </div>
+
+  <div id="statusPanel" class="status-panel" data-status="no-fix">
+    <div class="speed-readout">
+      <span id="speedValue">0</span>
+      <span id="speedUnit" class="speed-unit">km/h</span>
+    </div>
+
+    <div class="limit-row">
+      <span class="limit-label">Limit</span>
+      <span id="limitValue" class="limit-value">&mdash;</span>
+      <button id="micBtn" class="btn mic-btn" aria-label="Toggle voice listening" data-listening="false">
+        <span class="mic-dot"></span>&#127908;
+      </button>
+    </div>
+
+    <p id="statusMessage" class="status-message">Say a speed limit, or set one below.</p>
+  </div>
+
+  <div class="manual-entry">
+    <input type="number" id="manualLimitInput" inputmode="numeric" min="1" max="300" placeholder="Set limit manually" />
+    <button id="manualSetBtn" class="btn small">Set</button>
+    <button id="manualClearBtn" class="btn small">Clear</button>
+  </div>
+
+  <p id="transcript" class="transcript" aria-live="polite"></p>
+
+</div>
+
+<div id="settingsPanel" class="settings-panel" hidden>
+  <div class="settings-sheet">
+    <h2>Settings</h2>
+
+    <label class="setting-row">
+      <span class="setting-label">Units</span>
+      <div class="segmented" id="unitSegmented">
+        <button type="button" class="segment" data-unit="kmh">km/h</button>
+        <button type="button" class="segment" data-unit="mph">mph</button>
+      </div>
+    </label>
+
+    <label class="setting-row">
+      <span class="setting-label">Warn before limit <span class="setting-value" id="valWarnBuffer"></span></span>
+      <input type="range" id="setWarnBuffer" min="0" max="25" step="1" />
+      <span class="setting-help">Show an amber warning once you're within this percentage of the limit.</span>
+    </label>
+
+    <label class="setting-row checkbox-row">
+      <span class="setting-label">Sound alerts</span>
+      <input type="checkbox" id="setSoundAlerts" />
+    </label>
+
+    <label class="setting-row checkbox-row">
+      <span class="setting-label">Voice announcements</span>
+      <input type="checkbox" id="setVoiceAnnounce" />
+    </label>
+
+    <label class="setting-row checkbox-row">
+      <span class="setting-label">Keep screen awake</span>
+      <input type="checkbox" id="setWakeLock" />
+    </label>
+
+    <div class="settings-actions">
+      <button id="settingsCloseBtn" class="btn primary">Done</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
