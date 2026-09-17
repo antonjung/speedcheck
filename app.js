@@ -2,7 +2,7 @@
 
 // ---------- Config ----------
 
-const BUILD_VERSION = "1.0.5"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
+const BUILD_VERSION = "1.0.6"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_KMH = 3.6;
 const MPS_TO_MPH = 2.2369362920544;
@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   unit: "kmh", // 'kmh' | 'mph'
   warnBufferPercent: 10, // amber warning band below the limit
   soundAlerts: true,
+  tonePitch: 130, // Hz, fundamental of the alert bong - user-adjustable in Settings
   voiceAnnounce: true,
   wakeLock: true,
   speedLimit: null, // number, in `unit`
@@ -76,6 +77,8 @@ const unitSegmented = document.getElementById("unitSegmented");
 const setWarnBuffer = document.getElementById("setWarnBuffer");
 const valWarnBuffer = document.getElementById("valWarnBuffer");
 const setSoundAlerts = document.getElementById("setSoundAlerts");
+const setTonePitch = document.getElementById("setTonePitch");
+const valTonePitch = document.getElementById("valTonePitch");
 const setVoiceAnnounce = document.getElementById("setVoiceAnnounce");
 const setWakeLock = document.getElementById("setWakeLock");
 const setTestMode = document.getElementById("setTestMode");
@@ -221,8 +224,8 @@ function ensureAudioCtx() {
   return audioCtx;
 }
 
-const BONG_FUNDAMENTAL_HZ = 196; // G3 - low and resonant, reads as a "bong" rather than a chime
-// Inharmonic-ish partials modeled loosely on a struck bell/gong: the
+// Fundamental pitch is user-adjustable (settings.tonePitch); this is only the
+// fallback/default. Inharmonic-ish partials modeled loosely on a struck bell/gong: the
 // fundamental rings the longest, higher partials give the initial "strike"
 // and decay away quickly, leaving a warm hum.
 const BONG_PARTIALS = [
@@ -236,11 +239,12 @@ function playBong() {
   const ctx = ensureAudioCtx();
   if (!ctx) return;
   const now = ctx.currentTime;
+  const fundamental = settings.tonePitch || DEFAULT_SETTINGS.tonePitch;
   for (const { ratio, gain: peakGain, decay } of BONG_PARTIALS) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
-    osc.frequency.value = BONG_FUNDAMENTAL_HZ * ratio;
+    osc.frequency.value = fundamental * ratio;
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(peakGain, now + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + decay);
@@ -257,11 +261,12 @@ function startExceedTone() {
   const ctx = ensureAudioCtx();
   if (!ctx) return;
   const now = ctx.currentTime;
+  const fundamental = settings.tonePitch || DEFAULT_SETTINGS.tonePitch;
   exceedToneNodes = BONG_PARTIALS.map(({ ratio, gain: peakGain }) => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
-    osc.frequency.value = BONG_FUNDAMENTAL_HZ * ratio;
+    osc.frequency.value = fundamental * ratio;
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(peakGain * 0.8, now + 0.15);
     osc.connect(gain).connect(ctx.destination);
@@ -699,6 +704,8 @@ function openSettings() {
   setWarnBuffer.value = settings.warnBufferPercent;
   valWarnBuffer.textContent = `${settings.warnBufferPercent}%`;
   setSoundAlerts.checked = settings.soundAlerts;
+  setTonePitch.value = settings.tonePitch;
+  valTonePitch.textContent = `${settings.tonePitch} Hz`;
   setVoiceAnnounce.checked = settings.voiceAnnounce;
   setWakeLock.checked = settings.wakeLock;
   setTestMode.checked = settings.testMode;
@@ -738,6 +745,17 @@ setSoundAlerts.addEventListener("change", () => {
   } else if (currentStatus === "approaching" || currentStatus === "exceeding") {
     startAlertLoop();
   }
+});
+
+setTonePitch.addEventListener("input", () => {
+  settings.tonePitch = parseInt(setTonePitch.value, 10);
+  valTonePitch.textContent = `${settings.tonePitch} Hz`;
+});
+
+setTonePitch.addEventListener("change", () => {
+  saveSettings();
+  ensureAudioCtx(); // this is a user gesture, safe to unlock audio here too
+  playBong();
 });
 
 setVoiceAnnounce.addEventListener("change", () => {
