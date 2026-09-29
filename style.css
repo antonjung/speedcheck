@@ -140,7 +140,9 @@ button {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: env(safe-area-inset-top) 1rem env(safe-area-inset-bottom);
+  /* Extra bottom padding compresses the status/sign area upward, pulling
+     everything below the top bar up off the bottom edge of the screen. */
+  padding: env(safe-area-inset-top) 1rem calc(env(safe-area-inset-bottom) + 50px);
 }
 
 .top-bar {
@@ -242,12 +244,14 @@ button {
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease, color 0.12s ease;
 }
 
 .speed-sign:active { transform: scale(0.94); }
 
 .speed-sign[data-active="true"] {
+  background: #1a2029;
+  color: #fff;
   box-shadow: 0 0 0 4px var(--accent);
 }
 
