@@ -205,21 +205,16 @@ button {
   line-height: 1;
 }
 
-.speed-unit {
-  font-size: 1.3rem;
-  color: var(--muted);
-  font-weight: 600;
-}
-
 .status-message {
-  margin-top: 0.6rem;
+  margin: 0;
+  padding: 0.6rem 0.5rem 0.2rem;
   color: var(--muted);
   font-size: 0.9rem;
   text-align: center;
   min-height: 1.3em;
 }
 
-.status-panel[data-status="exceeding"] .status-message { color: #ffd7d2; font-weight: 700; }
+.main-view[data-status="exceeding"] .status-message { color: #ffd7d2; font-weight: 700; }
 
 .manual-entry {
   flex: 2;
@@ -248,7 +243,7 @@ button {
   aspect-ratio: 1;
   border-radius: 50%;
   background: #fff;
-  border: 6px solid var(--danger);
+  border: 11px solid var(--danger);
   color: #111;
   font-weight: 800;
   font-size: clamp(2.6rem, 15vw, 4.6rem);
@@ -265,7 +260,6 @@ button {
 .speed-sign[data-active="true"] {
   background: #1a2029;
   color: #fff;
-  box-shadow: 0 0 0 4px var(--accent);
 }
 
 .test-controls {

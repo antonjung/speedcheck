@@ -161,6 +161,7 @@ function updateStatus() {
     const prev = currentStatus;
     currentStatus = next;
     statusPanel.dataset.status = currentStatus;
+    mainView.dataset.status = currentStatus;
     renderStatusMessage();
     onStatusTransition(prev, next);
   }
@@ -577,6 +578,7 @@ function enterMainView() {
   mainView.hidden = false;
   applyTestModeUI();
   statusPanel.dataset.status = currentStatus;
+  mainView.dataset.status = currentStatus;
   renderSpeed();
   renderLimit();
   renderStatusMessage();
