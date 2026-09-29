@@ -5,7 +5,7 @@
 <title>Speed Guard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#0a0e14" />
-<meta name="description" content="Tracks your driving speed via GPS and warns you when you're near or over a speed limit you set by voice." />
+<meta name="description" content="Tracks your driving speed via GPS and warns you when you're near or over a speed limit you set." />
 
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="favicon-32.png" sizes="32x32" />
@@ -21,11 +21,10 @@
 <main id="startScreen" class="start-screen">
   <img src="icon-192.png" alt="" class="logo" />
   <h1>Speed Guard</h1>
-  <p class="subtitle">Tracks your speed by GPS. Just say the speed limit out loud and it'll warn you if you get close or go over.</p>
+  <p class="subtitle">Tracks your speed by GPS. Pick a speed limit and it'll warn you if you get close or go over.</p>
 
   <ul class="permission-list">
     <li id="permLocation" data-state="pending"><span class="dot"></span> Location &mdash; to measure your speed</li>
-    <li id="permMic" data-state="optional"><span class="dot"></span> Microphone &mdash; optional, lets you set limits by voice</li>
   </ul>
 
   <button id="startBtn" class="btn primary">Start</button>
@@ -34,7 +33,7 @@
 
   <button id="settingsBtnStart" class="btn secondary">Settings</button>
 
-  <p class="hint">Mount your phone where you can glance at it. Speak a limit any time, e.g. &ldquo;fifty&rdquo; or &ldquo;speed limit is thirty&rdquo;.</p>
+  <p class="hint">Mount your phone where you can glance at it. Tap a speed sign any time to change the limit.</p>
   <p class="build-version" id="buildVersion"></p>
 </main>
 
@@ -49,24 +48,27 @@
   <div id="statusPanel" class="status-panel" data-status="no-fix">
     <div class="speed-readout">
       <span id="speedValue">0</span>
-      <span id="speedUnit" class="speed-unit">km/h</span>
+      <span class="speed-unit">mph</span>
     </div>
 
     <div class="limit-row">
       <span class="limit-label">Limit</span>
       <span id="limitValue" class="limit-value">&mdash;</span>
-      <button id="micBtn" class="btn mic-btn" aria-label="Toggle voice listening" data-listening="false">
-        <span class="mic-dot"></span>&#127908;
-      </button>
     </div>
 
-    <p id="statusMessage" class="status-message">Say a speed limit, or set one below.</p>
+    <p id="statusMessage" class="status-message">Pick a speed limit below.</p>
   </div>
 
   <div class="manual-entry">
-    <input type="number" id="manualLimitInput" inputmode="numeric" min="1" max="300" placeholder="Set limit manually" />
-    <button id="manualSetBtn" class="btn small">Set</button>
-    <button id="manualClearBtn" class="btn small">Clear</button>
+    <div class="speed-signs" id="speedSigns">
+      <button type="button" class="speed-sign" data-limit="20">20</button>
+      <button type="button" class="speed-sign" data-limit="30">30</button>
+      <button type="button" class="speed-sign" data-limit="40">40</button>
+      <button type="button" class="speed-sign" data-limit="50">50</button>
+      <button type="button" class="speed-sign" data-limit="60">60</button>
+      <button type="button" class="speed-sign" data-limit="70">70</button>
+    </div>
+    <button id="manualClearBtn" class="btn small">Clear limit</button>
   </div>
 
   <div id="testControls" class="test-controls" hidden>
@@ -79,21 +81,11 @@
     </div>
   </div>
 
-  <p id="transcript" class="transcript" aria-live="polite"></p>
-
 </div>
 
 <div id="settingsPanel" class="settings-panel" hidden>
   <div class="settings-sheet">
     <h2>Settings</h2>
-
-    <label class="setting-row">
-      <span class="setting-label">Units</span>
-      <div class="segmented" id="unitSegmented">
-        <button type="button" class="segment" data-unit="kmh">km/h</button>
-        <button type="button" class="segment" data-unit="mph">mph</button>
-      </div>
-    </label>
 
     <label class="setting-row">
       <span class="setting-label">Warn before limit <span class="setting-value" id="valWarnBuffer"></span></span>
@@ -110,11 +102,6 @@
       <span class="setting-label">Alert tone <span class="setting-value" id="valTonePitch"></span></span>
       <input type="range" id="setTonePitch" min="70" max="260" step="2" />
       <span class="setting-help">Pitch of the bong. Release the slider to preview it.</span>
-    </label>
-
-    <label class="setting-row checkbox-row">
-      <span class="setting-label">Voice announcements</span>
-      <input type="checkbox" id="setVoiceAnnounce" />
     </label>
 
     <label class="setting-row checkbox-row">

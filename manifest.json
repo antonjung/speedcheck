@@ -1,7 +1,7 @@
 {
   "name": "Speed Guard",
   "short_name": "SpeedGuard",
-  "description": "Tracks your driving speed via GPS and warns you when you're near or over a speed limit you set by voice.",
+  "description": "Tracks your driving speed via GPS and warns you when you're near or over a speed limit you set.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

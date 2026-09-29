@@ -28,7 +28,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   // Only handle same-origin GET requests for the app shell. This app has no
-  // other network dependencies (geolocation and speech are on-device APIs).
+  // other network dependencies (geolocation is an on-device API).
   if (event.request.method !== "GET" || url.origin !== self.location.origin) {
     return;
   }
