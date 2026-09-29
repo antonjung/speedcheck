@@ -129,7 +129,7 @@ function renderStatusMessage() {
       statusMessageEl.textContent = "Waiting for GPS…";
       break;
     case "no-limit":
-      statusMessageEl.textContent = "Pick a speed limit below.";
+      statusMessageEl.textContent = "";
       break;
     case "ok":
       statusMessageEl.textContent = "Within limit.";
@@ -351,6 +351,7 @@ function setSpeedLimit(value) {
 speedSigns.addEventListener("click", (e) => {
   const btn = e.target.closest(".speed-sign");
   if (!btn) return;
+  ensureAudioCtx(); // reliable audio-unlock gesture - there's no Start button to do this anymore
   setSpeedLimit(parseInt(btn.dataset.limit, 10));
 });
 
@@ -486,6 +487,7 @@ function describeGeoError(err) {
 // rather than stopping the app - there's no separate start/stop screen to
 // return to, tracking just runs continuously from page load.
 stopBtn.addEventListener("click", () => {
+  ensureAudioCtx();
   settings.speedLimit = null;
   saveSettings();
   renderLimit();
@@ -493,8 +495,14 @@ stopBtn.addEventListener("click", () => {
 });
 
 // AudioContext needs a user gesture to unlock, and there's no Start button
-// to hang that off anymore - grab the very first tap anywhere on the page.
-document.addEventListener("pointerdown", () => ensureAudioCtx(), { once: true });
+// to hang that off anymore. The speed-sign and clear buttons above already
+// unlock it on the click a driver is most likely to make first; these are a
+// fallback for any other first interaction (e.g. opening Settings), covering
+// multiple gesture types since browsers (notably iOS Safari) vary on which
+// one they'll actually accept for unlocking Web Audio.
+for (const type of ["pointerdown", "keydown"]) {
+  document.addEventListener(type, () => ensureAudioCtx(), { once: true });
+}
 
 // Never carry a limit over from a previous session - opening the app should
 // never immediately start warning off a stale choice.

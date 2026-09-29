@@ -77,9 +77,19 @@ button {
   padding: 0.7rem 0.2rem;
 }
 
+.top-bar-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0 0.5rem;
+}
+
 .gps-info {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -132,11 +142,14 @@ button {
 
 .status-message {
   margin: 0;
-  padding: 0.6rem 0.5rem 0.2rem;
+  max-width: 100%;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.75rem;
   text-align: center;
-  min-height: 1.3em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 1em;
 }
 
 .main-view[data-status="exceeding"] .status-message { color: #ffd7d2; font-weight: 700; }
