@@ -319,12 +319,14 @@ button {
   .speed-signs {
     grid-template-columns: repeat(3, min-content);
     grid-template-rows: repeat(2, min-content);
-    gap: 4vh 3vw;
+    gap: 3vh 3vw;
   }
 
+  /* Same size as portrait (38 of the short screen side), only shrinking
+     if two rows would not otherwise fit the available height. */
   .speed-sign {
-    width: min(30vh, 14vw);
-    border-width: 8px;
-    font-size: clamp(1.6rem, 9vh, 3.4rem);
+    width: min(38vmin, calc((100dvh - 7rem - 3vh) / 2));
+    border-width: 11px;
+    font-size: clamp(2.6rem, 15vmin, 4.6rem);
   }
 }
