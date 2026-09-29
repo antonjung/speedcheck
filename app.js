@@ -36,12 +36,6 @@ function saveSettings() {
 
 // ---------- DOM ----------
 
-const startScreen = document.getElementById("startScreen");
-const startBtn = document.getElementById("startBtn");
-const startError = document.getElementById("startError");
-const permLocation = document.getElementById("permLocation");
-const settingsBtnStart = document.getElementById("settingsBtnStart");
-const testModeBadge = document.getElementById("testModeBadge");
 const buildVersionEl = document.getElementById("buildVersion");
 buildVersionEl.textContent = `build ${BUILD_VERSION}`;
 
@@ -307,15 +301,6 @@ function startTestTracking() {
   requestWakeLock();
 }
 
-function stopTracking() {
-  if (watchId != null) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-  }
-  releaseWakeLock();
-  stopExceedTone();
-}
-
 setInterval(() => {
   if (watchId != null && lastFixAt && Date.now() - lastFixAt > GPS_STALE_MS) {
     gpsInfo.textContent = "GPS — no fix";
@@ -346,10 +331,10 @@ function releaseWakeLock() {
 }
 
 document.addEventListener("visibilitychange", () => {
-  // Re-acquire whenever the app is on screen and tracking, whether that's
+  // Re-acquire whenever the app comes back on screen, whether tracking is
   // real GPS or Test mode - the sentinel itself is released by the browser
   // whenever the tab goes out of view.
-  if (document.visibilityState === "visible" && !mainView.hidden && settings.wakeLock) {
+  if (document.visibilityState === "visible" && settings.wakeLock) {
     requestWakeLock();
   }
 });
@@ -381,7 +366,6 @@ function openSettings() {
 }
 
 settingsBtn.addEventListener("click", openSettings);
-settingsBtnStart.addEventListener("click", openSettings);
 settingsCloseBtn.addEventListener("click", () => {
   settingsPanel.hidden = true;
 });
@@ -412,7 +396,7 @@ setTonePitch.addEventListener("change", () => {
 setWakeLock.addEventListener("change", () => {
   settings.wakeLock = setWakeLock.checked;
   saveSettings();
-  if (settings.wakeLock && !mainView.hidden) requestWakeLock();
+  if (settings.wakeLock) requestWakeLock();
   else releaseWakeLock();
 });
 
@@ -420,7 +404,6 @@ setWakeLock.addEventListener("change", () => {
 
 function applyTestModeUI() {
   testControls.hidden = !settings.testMode;
-  testModeBadge.hidden = !(settings.testMode && startScreen.hidden === false);
   if (settings.testMode) syncTestSlider();
 }
 
@@ -463,7 +446,7 @@ setTestMode.addEventListener("change", () => {
   settings.testMode = setTestMode.checked;
   saveSettings();
 
-  if (mainView.hidden === false && wasTestMode !== settings.testMode) {
+  if (wasTestMode !== settings.testMode) {
     if (settings.testMode) {
       // Switch live from real GPS to manual test control, keeping continuity.
       if (watchId != null) {
@@ -484,38 +467,12 @@ setTestMode.addEventListener("change", () => {
   applyTestModeUI();
 });
 
-// ---------- Start / stop ----------
-
-// Reflect the current geolocation permission state on the start screen, so it's
-// obvious whether the browser will prompt, has already granted, or is blocking.
-async function refreshLocationPermission() {
-  if (!navigator.permissions || !navigator.permissions.query) return null;
-  try {
-    const status = await navigator.permissions.query({ name: "geolocation" });
-    const apply = () => {
-      if (status.state === "granted") permLocation.dataset.state = "granted";
-      else if (status.state === "denied") permLocation.dataset.state = "denied";
-      else permLocation.dataset.state = "pending";
-      if (status.state === "denied") {
-        startError.textContent =
-          "Location is blocked for this site. Click the icon at the left of the address bar, set Location to Allow, then reload.";
-        startError.hidden = false;
-      }
-    };
-    apply();
-    status.onchange = apply;
-    return status.state;
-  } catch (err) {
-    return null;
-  }
-}
-
-refreshLocationPermission();
+// ---------- Startup ----------
 
 function describeGeoError(err) {
   switch (err && err.code) {
     case 1:
-      return "Location permission was denied. Click the icon at the left of the address bar, set Location to Allow, then press Start again.";
+      return "Location permission was denied. Click the icon at the left of the address bar, set Location to Allow, then reload the page.";
     case 2:
       return "Your device couldn't get a position fix. On a desktop PC check Windows Settings → Privacy & security → Location is on. This works best on a phone, outdoors.";
     case 3:
@@ -525,80 +482,37 @@ function describeGeoError(err) {
   }
 }
 
-startBtn.addEventListener("click", async () => {
-  startError.hidden = true;
-
-  if (settings.testMode) {
-    ensureAudioCtx(); // unlock audio on this user gesture
-    enterMainView();
-    return;
-  }
-
-  if (!("geolocation" in navigator)) {
-    startError.textContent = "This browser doesn't support geolocation.";
-    startError.hidden = false;
-    return;
-  }
-
-  ensureAudioCtx(); // unlock audio on this user gesture
-  startBtn.disabled = true;
-  startBtn.textContent = "Requesting location…";
-
-  const finish = () => {
-    startBtn.disabled = false;
-    startBtn.textContent = "Start";
-  };
-
-  // This call is what triggers the browser's permission prompt.
-  navigator.geolocation.getCurrentPosition(
-    () => {
-      permLocation.dataset.state = "granted";
-      finish();
-      enterMainView();
-    },
-    (err) => {
-      finish();
-      startError.textContent = describeGeoError(err);
-      startError.hidden = false;
-      if (err && err.code === 1) {
-        permLocation.dataset.state = "denied";
-      } else {
-        // Permission is fine, we just have no fix yet - let the watch keep
-        // trying rather than trapping the user on the start screen.
-        permLocation.dataset.state = "granted";
-        enterMainView();
-      }
-    },
-    { enableHighAccuracy: true, timeout: 10000 }
-  );
+// The top-right button clears the current limit (and so silences any alarm)
+// rather than stopping the app - there's no separate start/stop screen to
+// return to, tracking just runs continuously from page load.
+stopBtn.addEventListener("click", () => {
+  settings.speedLimit = null;
+  saveSettings();
+  renderLimit();
+  updateStatus();
 });
 
-function enterMainView() {
-  startScreen.hidden = true;
-  mainView.hidden = false;
-  applyTestModeUI();
-  statusPanel.dataset.status = currentStatus;
-  mainView.dataset.status = currentStatus;
-  renderSpeed();
-  renderLimit();
-  renderStatusMessage();
+// AudioContext needs a user gesture to unlock, and there's no Start button
+// to hang that off anymore - grab the very first tap anywhere on the page.
+document.addEventListener("pointerdown", () => ensureAudioCtx(), { once: true });
+
+// Never carry a limit over from a previous session - opening the app should
+// never immediately start warning off a stale choice.
+settings.speedLimit = null;
+saveSettings();
+
+applyTestModeUI();
+statusPanel.dataset.status = currentStatus;
+mainView.dataset.status = currentStatus;
+renderSpeed();
+renderLimit();
+renderStatusMessage();
+
+if (!settings.testMode && !("geolocation" in navigator)) {
+  statusMessageEl.textContent = "This browser doesn't support geolocation.";
+} else {
   startTracking();
 }
-
-stopBtn.addEventListener("click", () => {
-  stopTracking();
-  mainView.hidden = true;
-  startScreen.hidden = false;
-  displaySpeedMps = 0;
-  currentStatus = "no-fix";
-  hasSpeedFix = false;
-  lastPosition = null;
-  gpsInfo.classList.remove("test-mode");
-  testSpeedSlider.value = "0";
-  applyTestModeUI();
-});
-
-applyTestModeUI(); // reflect a persisted test-mode setting on the start screen badge
 
 // ---------- Service worker ----------
 
