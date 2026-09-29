@@ -164,11 +164,24 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* flex-start + weighted spacers (1:3) instead of justify-content:center,
+     so the gap above the speed readout is half the gap below it - i.e.
+     half of what an even (1:1) centered split would give. */
+  justify-content: flex-start;
   border-radius: var(--radius);
   padding: 1rem;
   transition: background-color 0.25s ease;
   background: var(--panel);
+}
+
+.status-panel::before {
+  content: "";
+  flex: 1 0 0;
+}
+
+.status-panel::after {
+  content: "";
+  flex: 3 0 0;
 }
 
 .status-panel[data-status="exceeding"] { background: color-mix(in srgb, var(--danger) 28%, var(--panel)); }
