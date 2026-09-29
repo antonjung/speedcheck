@@ -6,10 +6,12 @@ const BUILD_VERSION = "1.0.8"; // kept in sync with VERSION / CACHE_NAME by depl
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_MPH = 2.2369362920544;
 const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
+const MIN_TONE_HZ = 500;
+const MAX_TONE_HZ = 2500;
 
 const DEFAULT_SETTINGS = {
   soundAlerts: true,
-  tonePitch: 130, // Hz, fundamental of the exceed-limit tone - user-adjustable in Settings
+  tonePitch: 1200, // Hz, fundamental of the exceed-limit tone - user-adjustable in Settings
   wakeLock: true,
   speedLimit: null, // number, mph
   testMode: false, // drive speed manually instead of via GPS, for exercising warnings
@@ -25,6 +27,8 @@ function loadSettings() {
 }
 
 const settings = loadSettings();
+// Migrate pitches saved under the old, much lower range.
+if (settings.tonePitch < MIN_TONE_HZ) settings.tonePitch = DEFAULT_SETTINGS.tonePitch;
 
 function saveSettings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -167,14 +171,17 @@ function updateStatus() {
 
 function onStatusTransition(prev, next) {
   if (next === "exceeding") {
-    playExceedTone();
+    startExceedTone();
+  } else {
+    stopExceedTone();
   }
 }
 
 // ---------- Audio: exceed-limit alert ----------
 //
-// A single plain sine-tone beep, played once each time the current speed
-// crosses over the limit.
+// A single plain sine tone that plays continuously for as long as the
+// current speed is over the limit, and stops the moment it drops back
+// to or below it.
 
 function ensureAudioCtx() {
   if (!audioCtx) {
@@ -185,7 +192,44 @@ function ensureAudioCtx() {
   return audioCtx;
 }
 
-function playExceedTone() {
+let exceedToneNode = null; // { osc, gain }
+
+function startExceedTone() {
+  if (exceedToneNode || !settings.soundAlerts) return;
+  const ctx = ensureAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const fundamental = settings.tonePitch || DEFAULT_SETTINGS.tonePitch;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.value = fundamental;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.35, now + 0.03);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(now);
+  exceedToneNode = { osc, gain };
+}
+
+function stopExceedTone() {
+  if (!exceedToneNode) return;
+  const ctx = audioCtx;
+  const now = ctx ? ctx.currentTime : 0;
+  const { osc, gain } = exceedToneNode;
+  try {
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setValueAtTime(gain.gain.value, now);
+    gain.gain.linearRampToValueAtTime(0.0001, now + 0.12);
+    osc.stop(now + 0.15);
+  } catch (err) {
+    /* already stopped */
+  }
+  exceedToneNode = null;
+}
+
+// Short preview beep for auditioning a pitch in Settings, distinct from the
+// sustained alarm so it doesn't linger.
+function previewTone() {
   if (!settings.soundAlerts) return;
   const ctx = ensureAudioCtx();
   if (!ctx) return;
@@ -197,11 +241,11 @@ function playExceedTone() {
   osc.frequency.value = fundamental;
   gain.gain.setValueAtTime(0, now);
   gain.gain.linearRampToValueAtTime(0.35, now + 0.02);
-  gain.gain.setValueAtTime(0.35, now + 0.35);
-  gain.gain.linearRampToValueAtTime(0.0001, now + 0.45);
+  gain.gain.setValueAtTime(0.35, now + 0.3);
+  gain.gain.linearRampToValueAtTime(0.0001, now + 0.4);
   osc.connect(gain).connect(ctx.destination);
   osc.start(now);
-  osc.stop(now + 0.47);
+  osc.stop(now + 0.42);
 }
 
 // ---------- Geolocation / speed tracking ----------
@@ -271,6 +315,7 @@ function stopTracking() {
     watchId = null;
   }
   releaseWakeLock();
+  stopExceedTone();
 }
 
 setInterval(() => {
@@ -357,20 +402,24 @@ settingsCloseBtn.addEventListener("click", () => {
 setSoundAlerts.addEventListener("change", () => {
   settings.soundAlerts = setSoundAlerts.checked;
   saveSettings();
-  if (settings.soundAlerts && currentStatus === "exceeding") {
-    playExceedTone();
+  if (!settings.soundAlerts) {
+    stopExceedTone();
+  } else if (currentStatus === "exceeding") {
+    startExceedTone();
   }
 });
 
 setTonePitch.addEventListener("input", () => {
   settings.tonePitch = parseInt(setTonePitch.value, 10);
   valTonePitch.textContent = `${settings.tonePitch} Hz`;
+  // Retune live if the alarm is already sounding while the slider is dragged.
+  if (exceedToneNode) exceedToneNode.osc.frequency.value = settings.tonePitch;
 });
 
 setTonePitch.addEventListener("change", () => {
   saveSettings();
   ensureAudioCtx(); // this is a user gesture, safe to unlock audio here too
-  playExceedTone();
+  if (currentStatus !== "exceeding") previewTone();
 });
 
 setWakeLock.addEventListener("change", () => {

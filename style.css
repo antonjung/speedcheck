@@ -136,7 +136,8 @@ button {
 /* ---------- Main view ---------- */
 
 .main-view {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   padding: env(safe-area-inset-top) 1rem env(safe-area-inset-bottom);
@@ -157,12 +158,13 @@ button {
 
 .status-panel {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius);
-  padding: 2rem 1rem;
+  padding: 1rem;
   transition: background-color 0.25s ease;
   background: var(--panel);
 }
@@ -183,7 +185,7 @@ button {
 }
 
 #speedValue {
-  font-size: clamp(4.5rem, 24vw, 8rem);
+  font-size: clamp(3.6rem, 20vw, 6.5rem);
   font-weight: 700;
   line-height: 1;
 }
@@ -198,7 +200,7 @@ button {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  margin-top: 1.6rem;
+  margin-top: 0.9rem;
   background: rgba(255, 255, 255, 0.06);
   padding: 0.5rem 0.6rem 0.5rem 1rem;
   border-radius: 999px;
@@ -220,9 +222,9 @@ button {
 }
 
 .status-message {
-  margin-top: 1.2rem;
+  margin-top: 0.6rem;
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   text-align: center;
   min-height: 1.3em;
 }
@@ -230,30 +232,36 @@ button {
 .status-panel[data-status="exceeding"] .status-message { color: #ffd7d2; font-weight: 700; }
 
 .manual-entry {
+  flex: 2;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.7rem;
-  padding: 0.9rem 0.2rem;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 0.5rem 0.2rem;
 }
 
 .speed-signs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, min-content);
+  grid-template-rows: repeat(3, min-content);
   justify-content: center;
-  gap: 0.5rem;
-  width: 100%;
+  align-content: center;
+  gap: 3.5vh 6vw;
+  min-height: 0;
+  flex: 1;
 }
 
 .speed-sign {
-  flex: 1;
-  max-width: 3.2rem;
+  width: min(38vw, 20vh);
   aspect-ratio: 1;
   border-radius: 50%;
   background: #fff;
-  border: 3px solid var(--danger);
+  border: 6px solid var(--danger);
   color: #111;
   font-weight: 800;
-  font-size: 1.05rem;
+  font-size: clamp(1.6rem, 9vw, 2.8rem);
   font-variant-numeric: tabular-nums;
   display: flex;
   align-items: center;
@@ -265,7 +273,7 @@ button {
 .speed-sign:active { transform: scale(0.94); }
 
 .speed-sign[data-active="true"] {
-  box-shadow: 0 0 0 3px var(--accent);
+  box-shadow: 0 0 0 4px var(--accent);
 }
 
 .test-controls {
