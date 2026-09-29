@@ -185,7 +185,7 @@ button {
 }
 
 #speedValue {
-  font-size: clamp(3.6rem, 20vw, 6.5rem);
+  font-size: clamp(5rem, 30vw, 9rem);
   font-weight: 700;
   line-height: 1;
 }
@@ -194,31 +194,6 @@ button {
   font-size: 1.3rem;
   color: var(--muted);
   font-weight: 600;
-}
-
-.limit-row {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  margin-top: 0.9rem;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 0.5rem 0.6rem 0.5rem 1rem;
-  border-radius: 999px;
-}
-
-.limit-label {
-  color: var(--muted);
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.limit-value {
-  font-size: 1.4rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  min-width: 2ch;
-  text-align: center;
 }
 
 .status-message {
@@ -261,7 +236,7 @@ button {
   border: 6px solid var(--danger);
   color: #111;
   font-weight: 800;
-  font-size: clamp(1.6rem, 9vw, 2.8rem);
+  font-size: clamp(2.6rem, 15vw, 4.6rem);
   font-variant-numeric: tabular-nums;
   display: flex;
   align-items: center;

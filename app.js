@@ -52,11 +52,9 @@ const settingsBtn = document.getElementById("settingsBtn");
 
 const statusPanel = document.getElementById("statusPanel");
 const speedValueEl = document.getElementById("speedValue");
-const limitValueEl = document.getElementById("limitValue");
 const statusMessageEl = document.getElementById("statusMessage");
 
 const speedSigns = document.getElementById("speedSigns");
-const manualClearBtn = document.getElementById("manualClearBtn");
 
 const testControls = document.getElementById("testControls");
 const testSpeedSlider = document.getElementById("testSpeedSlider");
@@ -114,7 +112,6 @@ function renderSpeed() {
 }
 
 function renderLimit() {
-  limitValueEl.textContent = settings.speedLimit == null ? "—" : `${settings.speedLimit} mph`;
   const noLimit = settings.speedLimit == null;
   testPresetUnder.disabled = noLimit;
   testPresetAt.disabled = noLimit;
@@ -365,21 +362,10 @@ function setSpeedLimit(value) {
   updateStatus();
 }
 
-function clearSpeedLimit() {
-  settings.speedLimit = null;
-  saveSettings();
-  renderLimit();
-  updateStatus();
-}
-
 speedSigns.addEventListener("click", (e) => {
   const btn = e.target.closest(".speed-sign");
   if (!btn) return;
   setSpeedLimit(parseInt(btn.dataset.limit, 10));
-});
-
-manualClearBtn.addEventListener("click", () => {
-  clearSpeedLimit();
 });
 
 // ---------- Settings panel ----------
