@@ -6,13 +6,10 @@ const BUILD_VERSION = "1.0.7"; // kept in sync with VERSION / CACHE_NAME by depl
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_MPH = 2.2369362920544;
 const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
-const MAX_BONG_INTERVAL_MS = 3000; // bong rate just as you enter the warn band - "every few seconds"
-const MIN_BONG_INTERVAL_MS = 150; // bong rate right at the limit, just before it goes solid
 
 const DEFAULT_SETTINGS = {
-  warnBufferPercent: 10, // amber warning band below the limit
   soundAlerts: true,
-  tonePitch: 130, // Hz, fundamental of the alert bong - user-adjustable in Settings
+  tonePitch: 130, // Hz, fundamental of the exceed-limit tone - user-adjustable in Settings
   wakeLock: true,
   speedLimit: null, // number, mph
   testMode: false, // drive speed manually instead of via GPS, for exercising warnings
@@ -65,8 +62,6 @@ const testPresetOver = document.getElementById("testPresetOver");
 
 const settingsPanel = document.getElementById("settingsPanel");
 const settingsCloseBtn = document.getElementById("settingsCloseBtn");
-const setWarnBuffer = document.getElementById("setWarnBuffer");
-const valWarnBuffer = document.getElementById("valWarnBuffer");
 const setSoundAlerts = document.getElementById("setSoundAlerts");
 const setTonePitch = document.getElementById("setTonePitch");
 const valTonePitch = document.getElementById("valTonePitch");
@@ -80,7 +75,7 @@ let lastPosition = null; // { latitude, longitude, timestamp } for haversine fal
 let lastFixAt = 0;
 let hasSpeedFix = false; // never assert "within limit" off a speed we don't actually have
 let displaySpeedMps = 0; // smoothed
-let currentStatus = "no-fix"; // 'no-fix' | 'no-limit' | 'ok' | 'approaching' | 'exceeding'
+let currentStatus = "no-fix"; // 'no-fix' | 'no-limit' | 'ok' | 'exceeding'
 let wakeLockSentinel = null;
 
 let audioCtx = null;
@@ -144,9 +139,6 @@ function renderStatusMessage() {
     case "ok":
       statusMessageEl.textContent = "Within limit.";
       break;
-    case "approaching":
-      statusMessageEl.textContent = "Approaching the limit.";
-      break;
     case "exceeding":
       statusMessageEl.textContent = "Over the limit!";
       break;
@@ -159,10 +151,7 @@ function evaluateStatus() {
   if (!hasSpeedFix) return "no-fix";
   if (settings.speedLimit == null) return "no-limit";
   const currentMph = mpsToMph(displaySpeedMps);
-  const warnThreshold = settings.speedLimit * (1 - settings.warnBufferPercent / 100);
-  if (currentMph > settings.speedLimit) return "exceeding";
-  if (currentMph >= warnThreshold) return "approaching";
-  return "ok";
+  return currentMph > settings.speedLimit ? "exceeding" : "ok";
 }
 
 function updateStatus() {
@@ -178,23 +167,14 @@ function updateStatus() {
 
 function onStatusTransition(prev, next) {
   if (next === "exceeding") {
-    stopAlertLoop();
     playExceedTone();
-  } else if (next === "approaching") {
-    startAlertLoop();
-  } else {
-    stopAlertLoop();
   }
 }
 
-// ---------- Audio: proximity alert ----------
+// ---------- Audio: exceed-limit alert ----------
 //
-// A deep, resonant "bong" (like a temple bell/gong, not a bright ding)
-// repeats faster the closer the current speed gets to the limit within the
-// warn band - starting around once every few seconds just inside the band,
-// down to several times a second right at the edge. Crossing the limit
-// itself plays a plain single-tone beep instead, once, rather than the
-// bell-like bong or a sustained drone.
+// A single plain sine-tone beep, played once each time the current speed
+// crosses over the limit.
 
 function ensureAudioCtx() {
   if (!audioCtx) {
@@ -203,36 +183,6 @@ function ensureAudioCtx() {
   }
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
   return audioCtx;
-}
-
-// Fundamental pitch is user-adjustable (settings.tonePitch); this is only the
-// fallback/default. Inharmonic-ish partials modeled loosely on a struck bell/gong: the
-// fundamental rings the longest, higher partials give the initial "strike"
-// and decay away quickly, leaving a warm hum.
-const BONG_PARTIALS = [
-  { ratio: 1, gain: 0.32, decay: 0.9 },
-  { ratio: 2.76, gain: 0.14, decay: 0.5 },
-  { ratio: 4.07, gain: 0.07, decay: 0.28 },
-];
-
-function playBong() {
-  if (!settings.soundAlerts) return;
-  const ctx = ensureAudioCtx();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-  const fundamental = settings.tonePitch || DEFAULT_SETTINGS.tonePitch;
-  for (const { ratio, gain: peakGain, decay } of BONG_PARTIALS) {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = fundamental * ratio;
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(peakGain, now + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + decay);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + decay + 0.02);
-  }
 }
 
 function playExceedTone() {
@@ -252,37 +202,6 @@ function playExceedTone() {
   osc.connect(gain).connect(ctx.destination);
   osc.start(now);
   osc.stop(now + 0.47);
-}
-
-let alertTimer = null;
-
-function alertTick() {
-  alertTimer = null;
-  if (currentStatus !== "approaching" || settings.speedLimit == null) return;
-
-  const currentMph = mpsToMph(displaySpeedMps);
-  const warnThreshold = settings.speedLimit * (1 - settings.warnBufferPercent / 100);
-  const span = Math.max(0.001, settings.speedLimit - warnThreshold);
-  const proximity = Math.min(1, Math.max(0, (currentMph - warnThreshold) / span));
-  const interval = MAX_BONG_INTERVAL_MS - (MAX_BONG_INTERVAL_MS - MIN_BONG_INTERVAL_MS) * proximity;
-
-  playBong();
-  alertTimer = setTimeout(alertTick, interval);
-}
-
-function startAlertLoop() {
-  if (alertTimer) {
-    clearTimeout(alertTimer);
-    alertTimer = null;
-  }
-  alertTick();
-}
-
-function stopAlertLoop() {
-  if (alertTimer) {
-    clearTimeout(alertTimer);
-    alertTimer = null;
-  }
 }
 
 // ---------- Geolocation / speed tracking ----------
@@ -352,7 +271,6 @@ function stopTracking() {
     watchId = null;
   }
   releaseWakeLock();
-  stopAlertLoop();
 }
 
 setInterval(() => {
@@ -422,8 +340,6 @@ manualClearBtn.addEventListener("click", () => {
 // ---------- Settings panel ----------
 
 function openSettings() {
-  setWarnBuffer.value = settings.warnBufferPercent;
-  valWarnBuffer.textContent = `${settings.warnBufferPercent}%`;
   setSoundAlerts.checked = settings.soundAlerts;
   setTonePitch.value = settings.tonePitch;
   valTonePitch.textContent = `${settings.tonePitch} Hz`;
@@ -438,21 +354,10 @@ settingsCloseBtn.addEventListener("click", () => {
   settingsPanel.hidden = true;
 });
 
-setWarnBuffer.addEventListener("input", () => {
-  settings.warnBufferPercent = parseInt(setWarnBuffer.value, 10);
-  valWarnBuffer.textContent = `${settings.warnBufferPercent}%`;
-  saveSettings();
-  updateStatus();
-});
-
 setSoundAlerts.addEventListener("change", () => {
   settings.soundAlerts = setSoundAlerts.checked;
   saveSettings();
-  if (!settings.soundAlerts) {
-    stopAlertLoop();
-  } else if (currentStatus === "approaching") {
-    startAlertLoop();
-  } else if (currentStatus === "exceeding") {
+  if (settings.soundAlerts && currentStatus === "exceeding") {
     playExceedTone();
   }
 });
@@ -465,7 +370,7 @@ setTonePitch.addEventListener("input", () => {
 setTonePitch.addEventListener("change", () => {
   saveSettings();
   ensureAudioCtx(); // this is a user gesture, safe to unlock audio here too
-  playBong();
+  playExceedTone();
 });
 
 setWakeLock.addEventListener("change", () => {

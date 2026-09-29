@@ -21,7 +21,7 @@
 <main id="startScreen" class="start-screen">
   <img src="icon-192.png" alt="" class="logo" />
   <h1>Speed Guard</h1>
-  <p class="subtitle">Tracks your speed by GPS. Pick a speed limit and it'll warn you if you get close or go over.</p>
+  <p class="subtitle">Tracks your speed by GPS. Pick a speed limit and it'll warn you if you go over.</p>
 
   <ul class="permission-list">
     <li id="permLocation" data-state="pending"><span class="dot"></span> Location &mdash; to measure your speed</li>
@@ -87,12 +87,6 @@
   <div class="settings-sheet">
     <h2>Settings</h2>
 
-    <label class="setting-row">
-      <span class="setting-label">Warn before limit <span class="setting-value" id="valWarnBuffer"></span></span>
-      <input type="range" id="setWarnBuffer" min="0" max="25" step="1" />
-      <span class="setting-help">Show an amber warning once you're within this percentage of the limit.</span>
-    </label>
-
     <label class="setting-row checkbox-row">
       <span class="setting-label">Sound alerts</span>
       <input type="checkbox" id="setSoundAlerts" />
@@ -101,7 +95,7 @@
     <label class="setting-row">
       <span class="setting-label">Alert tone <span class="setting-value" id="valTonePitch"></span></span>
       <input type="range" id="setTonePitch" min="70" max="260" step="2" />
-      <span class="setting-help">Pitch of the bong. Release the slider to preview it.</span>
+      <span class="setting-help">Pitch of the over-limit tone. Release the slider to preview it.</span>
     </label>
 
     <label class="setting-row checkbox-row">

@@ -167,7 +167,6 @@ button {
   background: var(--panel);
 }
 
-.status-panel[data-status="approaching"] { background: color-mix(in srgb, var(--warn) 20%, var(--panel)); }
 .status-panel[data-status="exceeding"] { background: color-mix(in srgb, var(--danger) 28%, var(--panel)); }
 .status-panel[data-status="exceeding"] { animation: pulse-bg 1s ease-in-out infinite; }
 
@@ -228,7 +227,6 @@ button {
   min-height: 1.3em;
 }
 
-.status-panel[data-status="approaching"] .status-message { color: var(--warn); }
 .status-panel[data-status="exceeding"] .status-message { color: #ffd7d2; font-weight: 700; }
 
 .manual-entry {
