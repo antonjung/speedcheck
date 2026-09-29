@@ -286,3 +286,36 @@ button {
 .settings-actions .btn { width: 100%; }
 
 [hidden] { display: none !important; }
+
+/* ---------- Rotated (landscape) ---------- */
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .main-view {
+    display: grid;
+    grid-template-columns: 1fr 1.7fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    column-gap: 1rem;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+    padding-left: calc(env(safe-area-inset-left) + 1rem);
+    padding-right: calc(env(safe-area-inset-right) + 1rem);
+  }
+
+  .top-bar { grid-column: 1 / -1; padding: 0.3rem 0.2rem; }
+  .status-panel { grid-column: 1; grid-row: 2; }
+  .manual-entry { grid-column: 2; grid-row: 2; padding: 0; }
+  .test-controls { grid-column: 1 / -1; grid-row: 3; padding-bottom: 0.3rem; }
+
+  #speedValue { font-size: clamp(4rem, 28vh, 9rem); }
+
+  .speed-signs {
+    grid-template-columns: repeat(3, min-content);
+    grid-template-rows: repeat(2, min-content);
+    gap: 4vh 3vw;
+  }
+
+  .speed-sign {
+    width: min(30vh, 14vw);
+    border-width: 8px;
+    font-size: clamp(1.6rem, 9vh, 3.4rem);
+  }
+}
