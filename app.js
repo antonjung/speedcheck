@@ -529,3 +529,11 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+// After a rotation, iOS can leave the page scrolled/offset; snap it back.
+function resetViewportScroll() {
+  window.scrollTo(0, 0);
+  setTimeout(() => window.scrollTo(0, 0), 300);
+}
+window.addEventListener("orientationchange", resetViewportScroll);
+window.addEventListener("resize", () => window.scrollTo(0, 0));

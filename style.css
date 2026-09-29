@@ -20,6 +20,14 @@ html, body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
   user-select: none;
+  overflow: hidden;
+}
+
+/* Pin the page so a rotation can't leave it scrolled/offset ("wobbly"). */
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
 }
 
 button {
@@ -61,8 +69,9 @@ button {
 /* ---------- Main view ---------- */
 
 .main-view {
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
+  touch-action: manipulation;
   display: flex;
   flex-direction: column;
   /* Extra bottom padding compresses the status/sign area upward, pulling
