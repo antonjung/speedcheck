@@ -2,7 +2,7 @@
 
 // ---------- Config ----------
 
-const BUILD_VERSION = "1.0.18"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
+const BUILD_VERSION = "1.0.19"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_MPH = 2.2369362920544;
 const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
@@ -180,7 +180,20 @@ function ensureAudioCtx() {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (Ctx) audioCtx = new Ctx();
   }
-  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  if (audioCtx && audioCtx.state !== "running") {
+    // "interrupted" (iOS) and "suspended" both need a resume().
+    const p = audioCtx.resume();
+    if (p && p.catch) p.catch(() => {});
+    // A silent buffer played inside a gesture fully unlocks iOS Web Audio.
+    try {
+      const src = audioCtx.createBufferSource();
+      src.buffer = audioCtx.createBuffer(1, 1, 22050);
+      src.connect(audioCtx.destination);
+      src.start(0);
+    } catch (err) {
+      /* ignore */
+    }
+  }
   return audioCtx;
 }
 
@@ -500,9 +513,16 @@ stopBtn.addEventListener("click", () => {
 // fallback for any other first interaction (e.g. opening Settings), covering
 // multiple gesture types since browsers (notably iOS Safari) vary on which
 // one they'll actually accept for unlocking Web Audio.
-for (const type of ["pointerdown", "keydown"]) {
-  document.addEventListener(type, () => ensureAudioCtx(), { once: true });
+// Keep retrying on every gesture until the context is actually running, and
+// re-arm if the OS suspends it again (e.g. after backgrounding the app).
+for (const type of ["pointerdown", "touchend", "click", "keydown"]) {
+  document.addEventListener(type, () => ensureAudioCtx());
 }
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && audioCtx && audioCtx.state !== "running") {
+    audioCtx.resume().catch(() => {});
+  }
+});
 
 // Never carry a limit over from a previous session - opening the app should
 // never immediately start warning off a stale choice.
