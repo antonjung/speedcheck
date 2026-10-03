@@ -6,6 +6,9 @@ const BUILD_VERSION = "1.0.20"; // kept in sync with VERSION / CACHE_NAME by dep
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_MPH = 2.2369362920544;
 const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
+const LOOKAHEAD_MS = 3000; // approx. lag of the GPS reading behind real speed
+const SAMPLE_MS = 250;
+const MIN_ACCEL_GAIN_MPH = 1; // gain over LOOKAHEAD_MS needed to count as accelerating
 const MIN_TONE_HZ = 500;
 const MAX_TONE_HZ = 2500;
 
@@ -51,7 +54,8 @@ const statusMessageEl = document.getElementById("statusMessage");
 const speedSigns = document.getElementById("speedSigns");
 
 const testControls = document.getElementById("testControls");
-const testSpeedSlider = document.getElementById("testSpeedSlider");
+const testSpeedDown = document.getElementById("testSpeedDown");
+const testSpeedUp = document.getElementById("testSpeedUp");
 const testPresetUnder = document.getElementById("testPresetUnder");
 const testPresetAt = document.getElementById("testPresetAt");
 const testPresetOver = document.getElementById("testPresetOver");
@@ -71,6 +75,7 @@ let lastPosition = null; // { latitude, longitude, timestamp } for haversine fal
 let lastFixAt = 0;
 let hasSpeedFix = false; // never assert "within limit" off a speed we don't actually have
 let displaySpeedMps = 0; // smoothed
+let speedHistory = []; // { t, mph } samples from the last LOOKAHEAD_MS, oldest first
 let currentStatus = "no-fix"; // 'no-fix' | 'no-limit' | 'ok' | 'exceeding'
 let wakeLockSentinel = null;
 
@@ -142,11 +147,31 @@ function renderStatusMessage() {
 
 // ---------- Warning engine ----------
 
+// The GPS speed reading trails real speed by a few seconds, so while the
+// driver is speeding up we project the reading forward by the same amount:
+// whatever it gained over the last LOOKAHEAD_MS is assumed to gain again.
+// Steady or falling speed gets no allowance, so 39 in a 40 never alerts on
+// its own and slowing down clears the alert at the plain limit.
+function sampleSpeed() {
+  const now = Date.now();
+  speedHistory.push({ t: now, mph: mpsToMph(displaySpeedMps) });
+  while (speedHistory.length > 1 && speedHistory[0].t < now - LOOKAHEAD_MS) {
+    speedHistory.shift();
+  }
+}
+
+function effectiveMph() {
+  const currentMph = mpsToMph(displaySpeedMps);
+  if (speedHistory.length === 0) return currentMph;
+  const gain = currentMph - speedHistory[0].mph;
+  // Ignore sub-1mph creep so GPS noise can't trigger an early alert.
+  return gain >= MIN_ACCEL_GAIN_MPH ? currentMph + gain : currentMph;
+}
+
 function evaluateStatus() {
   if (!hasSpeedFix) return "no-fix";
   if (settings.speedLimit == null) return "no-limit";
-  const currentMph = mpsToMph(displaySpeedMps);
-  return currentMph > settings.speedLimit ? "exceeding" : "ok";
+  return effectiveMph() > settings.speedLimit ? "exceeding" : "ok";
 }
 
 function updateStatus() {
@@ -314,6 +339,17 @@ function startTestTracking() {
   requestWakeLock();
 }
 
+// Keep the history sampled at a steady rate (so a held speed ages out the
+// "accelerating" allowance) and re-evaluate even between GPS fixes.
+setInterval(() => {
+  if (!hasSpeedFix) {
+    speedHistory.length = 0;
+    return;
+  }
+  sampleSpeed();
+  updateStatus();
+}, SAMPLE_MS);
+
 setInterval(() => {
   if (watchId != null && lastFixAt && Date.now() - lastFixAt > GPS_STALE_MS) {
     gpsInfo.textContent = "GPS — no fix";
@@ -418,28 +454,22 @@ setWakeLock.addEventListener("change", () => {
 
 function applyTestModeUI() {
   testControls.hidden = !settings.testMode;
-  if (settings.testMode) syncTestSlider();
-}
-
-function syncTestSlider() {
-  if (!settings.testMode) return;
-  testSpeedSlider.value = String(Math.round(mpsToMph(displaySpeedMps)));
 }
 
 function setTestSpeedMph(value) {
   const clamped = Math.max(0, Math.min(200, value));
-  testSpeedSlider.value = String(clamped);
   displaySpeedMps = mphToMps(clamped);
   hasSpeedFix = true;
+  sampleSpeed();
   renderSpeed();
   updateStatus();
 }
 
-testSpeedSlider.addEventListener("input", () => {
-  displaySpeedMps = mphToMps(parseFloat(testSpeedSlider.value));
-  hasSpeedFix = true;
-  renderSpeed();
-  updateStatus();
+testSpeedDown.addEventListener("click", () => {
+  setTestSpeedMph(Math.round(mpsToMph(displaySpeedMps)) - 1);
+});
+testSpeedUp.addEventListener("click", () => {
+  setTestSpeedMph(Math.round(mpsToMph(displaySpeedMps)) + 1);
 });
 
 testPresetUnder.addEventListener("click", () => {

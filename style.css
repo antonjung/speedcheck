@@ -224,8 +224,6 @@ button {
   font-weight: 700;
 }
 
-#testSpeedSlider { width: 100%; }
-
 .test-presets {
   display: flex;
   gap: 0.5rem;
