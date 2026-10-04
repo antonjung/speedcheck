@@ -149,6 +149,12 @@ button {
   line-height: 1;
 }
 
+.actual-speed {
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
 .status-message {
   margin: 0;
   max-width: 100%;
@@ -223,8 +229,6 @@ button {
   letter-spacing: 0.04em;
   font-weight: 700;
 }
-
-#testSpeedSlider { width: 100%; }
 
 .test-presets {
   display: flex;

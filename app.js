@@ -6,6 +6,11 @@ const BUILD_VERSION = "1.0.21"; // kept in sync with VERSION / CACHE_NAME by dep
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_MPH = 2.2369362920544;
 const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
+const PROJECTION_MS = 3000; // approx. lag of the GPS reading behind real speed
+const SAMPLE_MS = 250;
+const MIN_PROJECTION_SPAN_MS = 1000; // need at least this much history to trust an acceleration figure
+const MIN_ACCEL_MPH_PER_S = 0.3; // ignore smaller "acceleration" as GPS noise
+const MAX_PROJECTION_MPH = 10; // never project further ahead than this
 const MIN_TONE_HZ = 500;
 const MAX_TONE_HZ = 2500;
 
@@ -51,7 +56,9 @@ const statusMessageEl = document.getElementById("statusMessage");
 const speedSigns = document.getElementById("speedSigns");
 
 const testControls = document.getElementById("testControls");
-const testSpeedSlider = document.getElementById("testSpeedSlider");
+const actualSpeedEl = document.getElementById("actualSpeed");
+const testSpeedDown = document.getElementById("testSpeedDown");
+const testSpeedUp = document.getElementById("testSpeedUp");
 const testPresetUnder = document.getElementById("testPresetUnder");
 const testPresetAt = document.getElementById("testPresetAt");
 const testPresetOver = document.getElementById("testPresetOver");
@@ -70,7 +77,8 @@ let watchId = null;
 let lastPosition = null; // { latitude, longitude, timestamp } for haversine fallback
 let lastFixAt = 0;
 let hasSpeedFix = false; // never assert "within limit" off a speed we don't actually have
-let displaySpeedMps = 0; // smoothed
+let displaySpeedMps = 0; // smoothed, as measured (lags real speed)
+let speedHistory = []; // { t, mph } samples from the last PROJECTION_MS, oldest first
 let currentStatus = "no-fix"; // 'no-fix' | 'no-limit' | 'ok' | 'exceeding'
 let wakeLockSentinel = null;
 
@@ -101,8 +109,35 @@ function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
 
 // ---------- Rendering ----------
 
+// The measured speed trails real speed by a few seconds, so the speed we
+// report is an estimate of where it will be PROJECTION_MS from now: measured
+// speed plus current acceleration x lookahead. Only acceleration counts -
+// steady or falling speed is reported as measured, so 39 in a 40 never alerts
+// on its own and slowing down clears the alert at the plain limit.
+function sampleSpeed() {
+  const now = Date.now();
+  speedHistory.push({ t: now, mph: mpsToMph(displaySpeedMps) });
+  while (speedHistory.length > 1 && speedHistory[0].t < now - PROJECTION_MS) {
+    speedHistory.shift();
+  }
+}
+
+function estimatedMph() {
+  const actual = mpsToMph(displaySpeedMps);
+  if (speedHistory.length < 2) return actual;
+  const first = speedHistory[0];
+  const last = speedHistory[speedHistory.length - 1];
+  const spanMs = last.t - first.t;
+  if (spanMs < MIN_PROJECTION_SPAN_MS) return actual;
+  const accel = (last.mph - first.mph) / (spanMs / 1000); // mph per second
+  if (accel < MIN_ACCEL_MPH_PER_S) return actual;
+  return actual + Math.min(accel * (PROJECTION_MS / 1000), MAX_PROJECTION_MPH);
+}
+
 function renderSpeed() {
-  speedValueEl.textContent = Math.round(mpsToMph(displaySpeedMps)).toString();
+  speedValueEl.textContent = Math.round(estimatedMph()).toString();
+  actualSpeedEl.hidden = !settings.testMode;
+  actualSpeedEl.textContent = `actual ${Math.round(mpsToMph(displaySpeedMps))}`;
 }
 
 function renderLimit() {
@@ -145,8 +180,7 @@ function renderStatusMessage() {
 function evaluateStatus() {
   if (!hasSpeedFix) return "no-fix";
   if (settings.speedLimit == null) return "no-limit";
-  const currentMph = mpsToMph(displaySpeedMps);
-  return currentMph > settings.speedLimit ? "exceeding" : "ok";
+  return estimatedMph() > settings.speedLimit ? "exceeding" : "ok";
 }
 
 function updateStatus() {
@@ -314,6 +348,18 @@ function startTestTracking() {
   requestWakeLock();
 }
 
+// Sample at a steady rate so a held speed ages out of the acceleration
+// estimate, and re-evaluate between GPS fixes.
+setInterval(() => {
+  if (!hasSpeedFix) {
+    speedHistory.length = 0;
+    return;
+  }
+  sampleSpeed();
+  renderSpeed();
+  updateStatus();
+}, SAMPLE_MS);
+
 setInterval(() => {
   if (watchId != null && lastFixAt && Date.now() - lastFixAt > GPS_STALE_MS) {
     gpsInfo.textContent = "GPS — no fix";
@@ -418,28 +464,23 @@ setWakeLock.addEventListener("change", () => {
 
 function applyTestModeUI() {
   testControls.hidden = !settings.testMode;
-  if (settings.testMode) syncTestSlider();
-}
-
-function syncTestSlider() {
-  if (!settings.testMode) return;
-  testSpeedSlider.value = String(Math.round(mpsToMph(displaySpeedMps)));
+  renderSpeed();
 }
 
 function setTestSpeedMph(value) {
   const clamped = Math.max(0, Math.min(200, value));
-  testSpeedSlider.value = String(clamped);
   displaySpeedMps = mphToMps(clamped);
   hasSpeedFix = true;
+  sampleSpeed();
   renderSpeed();
   updateStatus();
 }
 
-testSpeedSlider.addEventListener("input", () => {
-  displaySpeedMps = mphToMps(parseFloat(testSpeedSlider.value));
-  hasSpeedFix = true;
-  renderSpeed();
-  updateStatus();
+testSpeedDown.addEventListener("click", () => {
+  setTestSpeedMph(Math.round(mpsToMph(displaySpeedMps)) - 1);
+});
+testSpeedUp.addEventListener("click", () => {
+  setTestSpeedMph(Math.round(mpsToMph(displaySpeedMps)) + 1);
 });
 
 testPresetUnder.addEventListener("click", () => {
