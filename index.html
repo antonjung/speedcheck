@@ -48,10 +48,7 @@
 
   <div id="testControls" class="test-controls" hidden>
     <span class="test-controls-label">Test speed</span>
-    <div class="test-presets">
-      <button id="testSpeedDown" type="button" class="btn small" aria-label="Decrease test speed by 1 mph">&minus; 1 mph</button>
-      <button id="testSpeedUp" type="button" class="btn small" aria-label="Increase test speed by 1 mph">+ 1 mph</button>
-    </div>
+    <input type="range" id="testSpeedSlider" min="0" max="200" step="1" value="0" aria-label="Test speed" />
     <div class="test-presets">
       <button id="testPresetUnder" type="button" class="btn small">Limit &minus;5</button>
       <button id="testPresetAt" type="button" class="btn small">At limit</button>
@@ -85,7 +82,7 @@
       <span class="setting-label">Test mode</span>
       <input type="checkbox" id="setTestMode" />
     </label>
-    <span class="setting-help test-mode-help">Drive the speed with up/down buttons instead of GPS, so you can check the warnings without a car.</span>
+    <span class="setting-help test-mode-help">Drive the speed with a slider instead of GPS, so you can check the warnings without a car.</span>
 
     <div class="settings-actions">
       <button id="settingsCloseBtn" class="btn primary">Done</button>
