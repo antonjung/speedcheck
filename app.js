@@ -6,7 +6,7 @@ const BUILD_VERSION = "1.0.22"; // kept in sync with VERSION / CACHE_NAME by dep
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_MPH = 2.2369362920544;
 const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
-const PROJECTION_MS = 3000; // approx. lag of the GPS reading behind real speed
+const ACCEL_WINDOW_MS = 3000; // history span used to measure acceleration
 const SAMPLE_MS = 250;
 const MIN_PROJECTION_SPAN_MS = 1000; // need at least this much history to trust an acceleration figure
 const MIN_ACCEL_MPH_PER_S = 0.3; // ignore smaller "acceleration" as GPS noise
@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS = {
   tonePitch: 1200, // Hz, fundamental of the exceed-limit tone - user-adjustable in Settings
   wakeLock: true,
   speedLimit: null, // number, mph
+  lookaheadSec: 3, // how far ahead to estimate speed, to offset GPS lag - user-adjustable in Settings
   testMode: false, // drive speed manually instead of via GPS, for exercising warnings
 };
 
@@ -68,6 +69,8 @@ const settingsCloseBtn = document.getElementById("settingsCloseBtn");
 const setSoundAlerts = document.getElementById("setSoundAlerts");
 const setTonePitch = document.getElementById("setTonePitch");
 const valTonePitch = document.getElementById("valTonePitch");
+const setLookahead = document.getElementById("setLookahead");
+const valLookahead = document.getElementById("valLookahead");
 const setWakeLock = document.getElementById("setWakeLock");
 const setTestMode = document.getElementById("setTestMode");
 
@@ -78,7 +81,7 @@ let lastPosition = null; // { latitude, longitude, timestamp } for haversine fal
 let lastFixAt = 0;
 let hasSpeedFix = false; // never assert "within limit" off a speed we don't actually have
 let displaySpeedMps = 0; // smoothed, as measured (lags real speed)
-let speedHistory = []; // { t, mph } samples from the last PROJECTION_MS, oldest first
+let speedHistory = []; // { t, mph } samples from the last ACCEL_WINDOW_MS, oldest first
 let currentStatus = "no-fix"; // 'no-fix' | 'no-limit' | 'ok' | 'exceeding'
 let wakeLockSentinel = null;
 
@@ -110,14 +113,14 @@ function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
 // ---------- Rendering ----------
 
 // The measured speed trails real speed by a few seconds, so the speed we
-// report is an estimate of where it will be PROJECTION_MS from now: measured
+// report is an estimate of where it will be settings.lookaheadSec from now: measured
 // speed plus current acceleration x lookahead. Only acceleration counts -
 // steady or falling speed is reported as measured, so 39 in a 40 never alerts
 // on its own and slowing down clears the alert at the plain limit.
 function sampleSpeed() {
   const now = Date.now();
   speedHistory.push({ t: now, mph: mpsToMph(displaySpeedMps) });
-  while (speedHistory.length > 1 && speedHistory[0].t < now - PROJECTION_MS) {
+  while (speedHistory.length > 1 && speedHistory[0].t < now - ACCEL_WINDOW_MS) {
     speedHistory.shift();
   }
 }
@@ -131,7 +134,7 @@ function estimatedMph() {
   if (spanMs < MIN_PROJECTION_SPAN_MS) return actual;
   const accel = (last.mph - first.mph) / (spanMs / 1000); // mph per second
   if (accel < MIN_ACCEL_MPH_PER_S) return actual;
-  return actual + Math.min(accel * (PROJECTION_MS / 1000), MAX_PROJECTION_MPH);
+  return actual + Math.min(accel * settings.lookaheadSec, MAX_PROJECTION_MPH);
 }
 
 function renderSpeed() {
@@ -420,6 +423,8 @@ function openSettings() {
   setSoundAlerts.checked = settings.soundAlerts;
   setTonePitch.value = settings.tonePitch;
   valTonePitch.textContent = `${settings.tonePitch} Hz`;
+  setLookahead.value = settings.lookaheadSec;
+  valLookahead.textContent = `${settings.lookaheadSec} s`;
   setWakeLock.checked = settings.wakeLock;
   setTestMode.checked = settings.testMode;
   settingsPanel.hidden = false;
@@ -451,6 +456,14 @@ setTonePitch.addEventListener("change", () => {
   saveSettings();
   ensureAudioCtx(); // this is a user gesture, safe to unlock audio here too
   if (currentStatus !== "exceeding") previewTone();
+});
+
+setLookahead.addEventListener("input", () => {
+  settings.lookaheadSec = parseFloat(setLookahead.value);
+  valLookahead.textContent = `${settings.lookaheadSec} s`;
+  saveSettings();
+  renderSpeed();
+  updateStatus();
 });
 
 setWakeLock.addEventListener("change", () => {
