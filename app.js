@@ -162,7 +162,11 @@ function renderLimit() {
   for (const btn of speedSigns.querySelectorAll(".speed-sign")) {
     const limit = parseInt(btn.dataset.limit, 10);
     // Voice mode: the buttons are indicators, lighting the next speed to be reached.
-    btn.dataset.active = String(settings.autoMode ? limit === nextVoiceSpeed() : !noLimit && limit === settings.speedLimit);
+    // Above the top speed there is no next one, so the top sign flashes instead.
+    const next = nextVoiceSpeed();
+    const topFlash = settings.autoMode && next === undefined && limit === VOICE_SPEEDS[VOICE_SPEEDS.length - 1];
+    btn.dataset.active = String(settings.autoMode ? limit === next || topFlash : !noLimit && limit === settings.speedLimit);
+    btn.dataset.flash = String(topFlash);
   }
 }
 

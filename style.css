@@ -346,3 +346,9 @@ button {
 }
 
 .speed-signs.indicator-only { pointer-events: none; }
+
+.speed-sign[data-flash="true"] { animation: sign-flash 0.7s steps(1) infinite; }
+
+@keyframes sign-flash {
+  50% { background: #fff; color: #111; }
+}
