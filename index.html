@@ -84,6 +84,18 @@
     </label>
 
     <label class="setting-row checkbox-row">
+      <span class="setting-label">Voice mode</span>
+      <input type="checkbox" id="setAutoMode" />
+    </label>
+    <span class="setting-help test-mode-help">No speed buttons: you hear a warning once when you reach 20, 30, 40, 50, 60 or 70 mph, and advice when you drop back below it.</span>
+
+    <div class="setting-row" id="voiceRecorder">
+      <span class="setting-label">Voice messages</span>
+      <span class="setting-help">Record your own warning and advice for each speed. Anything not recorded is spoken by the device voice.</span>
+      <div id="voiceRows" class="voice-rows"></div>
+    </div>
+
+    <label class="setting-row checkbox-row">
       <span class="setting-label">Keep screen awake</span>
       <input type="checkbox" id="setWakeLock" />
     </label>

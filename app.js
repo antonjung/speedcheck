@@ -13,6 +13,9 @@ const MIN_ACCEL_MPH_PER_S = 0.3; // ignore smaller "acceleration" as GPS noise
 const MAX_PROJECTION_MPH = 10; // never project further ahead than this
 const MIN_TONE_HZ = 500;
 const MAX_TONE_HZ = 2500;
+const VOICE_SPEEDS = [20, 30, 40, 50, 60, 70];
+const VOICE_DROP_HYSTERESIS_MPH = 1; // must fall this far below a speed before the advice is given
+const MAX_RECORDING_MS = 10000;
 
 const DEFAULT_SETTINGS = {
   soundAlerts: true,
@@ -20,6 +23,7 @@ const DEFAULT_SETTINGS = {
   wakeLock: true,
   speedLimit: null, // number, mph
   lookaheadSec: 3, // how far ahead to estimate speed, to offset GPS lag - user-adjustable in Settings
+  autoMode: false, // voice mode: no limit buttons, spoken warning/advice at each of VOICE_SPEEDS
   testMode: false, // drive speed manually instead of via GPS, for exercising warnings
 };
 
@@ -73,6 +77,10 @@ const setLookahead = document.getElementById("setLookahead");
 const valLookahead = document.getElementById("valLookahead");
 const setWakeLock = document.getElementById("setWakeLock");
 const setTestMode = document.getElementById("setTestMode");
+const setAutoMode = document.getElementById("setAutoMode");
+const voiceRecorder = document.getElementById("voiceRecorder");
+const voiceRows = document.getElementById("voiceRows");
+const manualEntry = document.querySelector(".manual-entry");
 
 // ---------- State ----------
 
@@ -182,11 +190,12 @@ function renderStatusMessage() {
 
 function evaluateStatus() {
   if (!hasSpeedFix) return "no-fix";
-  if (settings.speedLimit == null) return "no-limit";
+  if (settings.autoMode || settings.speedLimit == null) return "no-limit";
   return estimatedMph() > settings.speedLimit ? "exceeding" : "ok";
 }
 
 function updateStatus() {
+  updateVoiceAlerts();
   const next = evaluateStatus();
   if (next !== currentStatus) {
     const prev = currentStatus;
@@ -288,6 +297,229 @@ function previewTone() {
   osc.connect(gain).connect(ctx.destination);
   osc.start(now);
   osc.stop(now + 0.42);
+}
+
+// ---------- Voice mode: spoken warning / advice per speed ----------
+//
+// Recordings live in IndexedDB (blobs are too big for localStorage). Each
+// speed has a "warning" (played once when speed reaches it) and an "advice"
+// (played when speed falls back below it). Unrecorded ones fall back to the
+// device's speech synthesis.
+
+const DB_NAME = "speed-guard-voice";
+const DB_STORE = "clips";
+const clipCache = new Map(); // key -> Blob | null
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbOp(mode, fn) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, mode);
+    const req = fn(tx.objectStore(DB_STORE));
+    tx.oncomplete = () => resolve(req.result);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function clipKey(kind, speed) {
+  return `${kind}-${speed}`;
+}
+
+async function loadClips() {
+  try {
+    for (const speed of VOICE_SPEEDS) {
+      for (const kind of ["warning", "advice"]) {
+        const blob = await dbOp("readonly", (st) => st.get(clipKey(kind, speed)));
+        clipCache.set(clipKey(kind, speed), blob || null);
+      }
+    }
+  } catch (err) {
+    /* IndexedDB unavailable: everything falls back to speech */
+  }
+}
+
+async function saveClip(kind, speed, blob) {
+  clipCache.set(clipKey(kind, speed), blob);
+  try {
+    await dbOp("readwrite", (st) => st.put(blob, clipKey(kind, speed)));
+  } catch (err) {
+    /* kept in memory for this session */
+  }
+}
+
+async function deleteClip(kind, speed) {
+  clipCache.set(clipKey(kind, speed), null);
+  try {
+    await dbOp("readwrite", (st) => st.delete(clipKey(kind, speed)));
+  } catch (err) {
+    /* ignore */
+  }
+}
+
+function fallbackText(kind, speed) {
+  return kind === "warning"
+    ? `Warning. ${speed} miles per hour.`
+    : `You are now below ${speed} miles per hour.`;
+}
+
+let voiceSource = null;
+
+function stopVoice() {
+  if (voiceSource) {
+    try {
+      voiceSource.stop();
+    } catch (err) {
+      /* already stopped */
+    }
+    voiceSource = null;
+  }
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+}
+
+async function playVoice(kind, speed) {
+  stopVoice();
+  const blob = clipCache.get(clipKey(kind, speed));
+  const ctx = blob ? ensureAudioCtx() : null;
+  if (blob && ctx) {
+    try {
+      const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      src.start();
+      voiceSource = src;
+      return;
+    } catch (err) {
+      /* undecodable clip: fall through to speech */
+    }
+  }
+  if ("speechSynthesis" in window) {
+    speechSynthesis.speak(new SpeechSynthesisUtterance(fallbackText(kind, speed)));
+  }
+}
+
+const crossedSpeeds = new Set();
+
+function resetVoiceState() {
+  crossedSpeeds.clear();
+  stopVoice();
+}
+
+function updateVoiceAlerts() {
+  if (!settings.autoMode || !settings.soundAlerts || !hasSpeedFix) return;
+  const mph = estimatedMph();
+  let warn = null;
+  let advise = null;
+  for (const speed of VOICE_SPEEDS) {
+    const crossed = crossedSpeeds.has(speed);
+    if (!crossed && mph >= speed) {
+      crossedSpeeds.add(speed);
+      warn = speed; // keeps the highest newly reached
+    } else if (crossed && mph < speed - VOICE_DROP_HYSTERESIS_MPH) {
+      crossedSpeeds.delete(speed);
+      if (advise == null) advise = speed; // keeps the lowest newly dropped below
+    }
+  }
+  if (warn != null) playVoice("warning", warn);
+  else if (advise != null) playVoice("advice", advise);
+}
+
+let recorder = null; // { kind, speed, mr, timer }
+
+async function toggleRecording(kind, speed) {
+  if (recorder) {
+    recorder.mr.stop();
+    return;
+  }
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    alert("Recording isn't supported in this browser.");
+    return;
+  }
+  stopVoice();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    alert("Microphone access was denied.");
+    return;
+  }
+  const mr = new MediaRecorder(stream);
+  const chunks = [];
+  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  mr.onstop = async () => {
+    clearTimeout(recorder.timer);
+    stream.getTracks().forEach((t) => t.stop());
+    recorder = null;
+    if (chunks.length) await saveClip(kind, speed, new Blob(chunks, { type: mr.mimeType }));
+    renderVoiceRows();
+  };
+  recorder = { kind, speed, mr, timer: setTimeout(() => mr.stop(), MAX_RECORDING_MS) };
+  mr.start();
+  renderVoiceRows();
+}
+
+function voiceButton(text, className, onClick, disabled) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = className;
+  btn.textContent = text;
+  btn.disabled = disabled;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function renderVoiceRows() {
+  voiceRows.textContent = "";
+  for (const speed of VOICE_SPEEDS) {
+    for (const kind of ["warning", "advice"]) {
+      const row = document.createElement("div");
+      row.className = "voice-row";
+      const label = document.createElement("span");
+      label.className = "voice-speed";
+      label.textContent = kind === "warning" ? String(speed) : "";
+      const kindEl = document.createElement("span");
+      kindEl.className = "voice-kind";
+      kindEl.textContent = kind === "warning" ? "Warning" : "Advice";
+      row.append(label, kindEl);
+
+      const isRecording = !!recorder && recorder.kind === kind && recorder.speed === speed;
+      row.append(
+        voiceButton(isRecording ? "Stop" : "Record", "btn small" + (isRecording ? " recording" : ""), () => toggleRecording(kind, speed), !!recorder && !isRecording),
+        voiceButton("Play", "btn small", () => {
+          ensureAudioCtx();
+          playVoice(kind, speed);
+        }, !!recorder)
+      );
+      if (clipCache.get(clipKey(kind, speed))) {
+        row.append(
+          voiceButton("Clear", "btn small", async () => {
+            await deleteClip(kind, speed);
+            renderVoiceRows();
+          }, !!recorder)
+        );
+      } else {
+        const has = document.createElement("span");
+        has.className = "voice-has";
+        has.textContent = "default voice";
+        row.append(has);
+      }
+      voiceRows.append(row);
+    }
+  }
+}
+
+function applyAutoModeUI() {
+  manualEntry.hidden = settings.autoMode;
+  stopBtn.hidden = settings.autoMode;
+  voiceRecorder.hidden = !settings.autoMode;
 }
 
 // ---------- Geolocation / speed tracking ----------
@@ -427,6 +659,9 @@ function openSettings() {
   valLookahead.textContent = `${settings.lookaheadSec} s`;
   setWakeLock.checked = settings.wakeLock;
   setTestMode.checked = settings.testMode;
+  setAutoMode.checked = settings.autoMode;
+  applyAutoModeUI();
+  renderVoiceRows();
   settingsPanel.hidden = false;
 }
 
@@ -463,6 +698,17 @@ setLookahead.addEventListener("input", () => {
   valLookahead.textContent = `${settings.lookaheadSec} s`;
   saveSettings();
   renderSpeed();
+  updateStatus();
+});
+
+setAutoMode.addEventListener("change", () => {
+  settings.autoMode = setAutoMode.checked;
+  if (settings.autoMode) settings.speedLimit = null;
+  saveSettings();
+  ensureAudioCtx();
+  resetVoiceState();
+  applyAutoModeUI();
+  renderLimit();
   updateStatus();
 });
 
@@ -584,6 +830,8 @@ settings.speedLimit = null;
 saveSettings();
 
 applyTestModeUI();
+applyAutoModeUI();
+loadClips().then(renderVoiceRows);
 statusPanel.dataset.status = currentStatus;
 mainView.dataset.status = currentStatus;
 renderSpeed();
