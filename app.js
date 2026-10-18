@@ -80,7 +80,6 @@ const setTestMode = document.getElementById("setTestMode");
 const setAutoMode = document.getElementById("setAutoMode");
 const voiceRecorder = document.getElementById("voiceRecorder");
 const voiceRows = document.getElementById("voiceRows");
-const manualEntry = document.querySelector(".manual-entry");
 
 // ---------- State ----------
 
@@ -151,13 +150,19 @@ function renderSpeed() {
   actualSpeedEl.textContent = `actual ${Math.round(mpsToMph(displaySpeedMps))}`;
 }
 
+function nextVoiceSpeed() {
+  return VOICE_SPEEDS.find((speed) => !crossedSpeeds.has(speed));
+}
+
 function renderLimit() {
   const noLimit = settings.speedLimit == null;
   testPresetUnder.disabled = noLimit;
   testPresetAt.disabled = noLimit;
   testPresetOver.disabled = noLimit;
   for (const btn of speedSigns.querySelectorAll(".speed-sign")) {
-    btn.dataset.active = String(!noLimit && parseInt(btn.dataset.limit, 10) === settings.speedLimit);
+    const limit = parseInt(btn.dataset.limit, 10);
+    // Voice mode: the buttons are indicators, lighting the next speed to be reached.
+    btn.dataset.active = String(settings.autoMode ? limit === nextVoiceSpeed() : !noLimit && limit === settings.speedLimit);
   }
 }
 
@@ -196,6 +201,7 @@ function evaluateStatus() {
 
 function updateStatus() {
   updateVoiceAlerts();
+  if (settings.autoMode) renderLimit();
   const next = evaluateStatus();
   if (next !== currentStatus) {
     const prev = currentStatus;
@@ -517,7 +523,7 @@ function renderVoiceRows() {
 }
 
 function applyAutoModeUI() {
-  manualEntry.hidden = settings.autoMode;
+  speedSigns.classList.toggle("indicator-only", settings.autoMode);
   stopBtn.hidden = settings.autoMode;
   voiceRecorder.hidden = !settings.autoMode;
 }
@@ -644,7 +650,7 @@ function setSpeedLimit(value) {
 
 speedSigns.addEventListener("click", (e) => {
   const btn = e.target.closest(".speed-sign");
-  if (!btn) return;
+  if (!btn || settings.autoMode) return;
   ensureAudioCtx(); // reliable audio-unlock gesture - there's no Start button to do this anymore
   setSpeedLimit(parseInt(btn.dataset.limit, 10));
 });
