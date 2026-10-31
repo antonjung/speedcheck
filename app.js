@@ -13,7 +13,8 @@ const MIN_ACCEL_MPH_PER_S = 0.3; // ignore smaller "acceleration" as GPS noise
 const MAX_PROJECTION_MPH = 10; // never project further ahead than this
 const MIN_TONE_HZ = 500;
 const MAX_TONE_HZ = 2500;
-const VOICE_SPEEDS = [20, 30, 40, 50, 60, 70];
+const VOICE_SIGNS = [20, 30, 40, 50, 60, 70];
+const VOICE_SPEEDS = VOICE_SIGNS.flatMap((sign) => [sign - 1, sign, sign + 1]); // 19, 20, 21, 29, 30, 31, ...
 const VOICE_DROP_HYSTERESIS_MPH = 1; // must fall this far below a speed before the advice is given
 const MAX_RECORDING_MS = 10000;
 
@@ -164,8 +165,9 @@ function renderLimit() {
     // Voice mode: the buttons are indicators, lighting the next speed to be reached.
     // Above the top speed there is no next one, so the top sign flashes instead.
     const next = nextVoiceSpeed();
-    const topFlash = settings.autoMode && next === undefined && limit === VOICE_SPEEDS[VOICE_SPEEDS.length - 1];
-    btn.dataset.active = String(settings.autoMode ? limit === next || topFlash : !noLimit && limit === settings.speedLimit);
+    const nextSign = next === undefined ? undefined : Math.round(next / 10) * 10;
+    const topFlash = settings.autoMode && next === undefined && limit === VOICE_SIGNS[VOICE_SIGNS.length - 1];
+    btn.dataset.active = String(settings.autoMode ? limit === nextSign || topFlash : !noLimit && limit === settings.speedLimit);
     btn.dataset.flash = String(topFlash);
   }
 }
