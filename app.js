@@ -377,9 +377,7 @@ async function deleteClip(kind, speed) {
 }
 
 function fallbackText(kind, speed) {
-  return kind === "warning"
-    ? `Warning. ${speed} miles per hour.`
-    : `You are now below ${speed} miles per hour.`;
+  return String(speed);
 }
 
 let voiceSource = null;
