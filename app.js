@@ -38,7 +38,6 @@ function saveSettings() {
 document.getElementById("buildVersion").textContent = `build ${BUILD_VERSION}`;
 
 const gpsInfo = document.getElementById("gpsInfo");
-const settingsBtn = document.getElementById("settingsBtn");
 const speedValueEl = document.getElementById("speedValue");
 const statusMessageEl = document.getElementById("statusMessage");
 const dialEl = document.getElementById("dial");
@@ -49,8 +48,6 @@ const testSpeedUp = document.getElementById("testSpeedUp");
 const testSpeedDown10 = document.getElementById("testSpeedDown10");
 const testSpeedUp10 = document.getElementById("testSpeedUp10");
 
-const settingsPanel = document.getElementById("settingsPanel");
-const settingsCloseBtn = document.getElementById("settingsCloseBtn");
 const setSpeak = document.getElementById("setSpeak");
 const setIntervalEl = document.getElementById("setInterval");
 const valInterval = document.getElementById("valInterval");
@@ -304,19 +301,13 @@ document.addEventListener("visibilitychange", () => {
 
 // ---------- Settings panel ----------
 
-function openSettings() {
+function initControls() {
   setSpeak.checked = settings.speak;
   setIntervalEl.value = settings.intervalSec;
   valInterval.textContent = `${settings.intervalSec} s`;
   setWakeLock.checked = settings.wakeLock;
   setTestMode.checked = settings.testMode;
-  settingsPanel.hidden = false;
 }
-
-settingsBtn.addEventListener("click", openSettings);
-settingsCloseBtn.addEventListener("click", () => {
-  settingsPanel.hidden = true;
-});
 
 setSpeak.addEventListener("change", () => {
   settings.speak = setSpeak.checked;
@@ -413,6 +404,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 buildDial();
+initControls();
 applyTestModeUI();
 restartAnnounceTimer();
 statusMessageEl.textContent = "Waiting for GPS…";

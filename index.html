@@ -21,7 +21,7 @@
 <div id="mainView" class="main-view">
 
   <div class="top-bar">
-    <button id="settingsBtn" class="btn icon-btn" aria-label="Settings">&#9881;</button>
+    <span class="top-bar-spacer"></span>
     <div class="top-bar-center">
       <div id="gpsInfo" class="gps-info">GPS &mdash;</div>
       <p id="statusMessage" class="status-message"></p>
@@ -47,12 +47,7 @@
     </div>
   </div>
 
-</div>
-
-<div id="settingsPanel" class="settings-panel" hidden>
-  <div class="settings-sheet">
-    <h2>Settings</h2>
-
+  <div class="controls">
     <label class="setting-row checkbox-row">
       <span class="setting-label">Speak speed</span>
       <input type="checkbox" id="setSpeak" />
@@ -61,7 +56,6 @@
     <label class="setting-row">
       <span class="setting-label">Announce every <span class="setting-value" id="valInterval"></span></span>
       <input type="range" id="setInterval" min="1" max="60" step="1" />
-      <span class="setting-help">How often the current speed is spoken, as just the number. Nothing is spoken while stopped.</span>
     </label>
 
     <label class="setting-row checkbox-row">
@@ -73,14 +67,10 @@
       <span class="setting-label">Test mode</span>
       <input type="checkbox" id="setTestMode" />
     </label>
-    <span class="setting-help test-mode-help">Drive the speed with buttons instead of GPS, so you can check the dial and voice without a car.</span>
-
-    <div class="settings-actions">
-      <button id="settingsCloseBtn" class="btn primary">Done</button>
-    </div>
-
-    <p class="build-version" id="buildVersion"></p>
   </div>
+
+  <p class="build-version" id="buildVersion"></p>
+
 </div>
 
 <script src="app.js"></script>

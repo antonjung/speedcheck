@@ -181,66 +181,21 @@ button {
 
 .gps-info.test-mode { color: var(--warn); font-weight: 700; }
 
-/* ---------- Settings ---------- */
+/* ---------- Controls ---------- */
 
-.settings-panel {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: flex-end;
-  z-index: 20;
-}
-
-.settings-sheet {
-  background: var(--panel);
-  width: 100%;
-  border-radius: 20px 20px 0 0;
-  padding: 1.4rem 1.4rem calc(1.4rem + env(safe-area-inset-bottom));
+.controls {
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
-  max-height: 92vh;
-  overflow-y: auto;
+  gap: 0.8rem;
+  padding: 0.9rem 0.3rem 0.2rem;
 }
 
-.settings-sheet h2 { margin: 0 0 0.2rem; }
-
-.setting-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.setting-row.checkbox-row {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.setting-label {
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.setting-value {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.setting-help {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
+.setting-row { display: flex; flex-direction: column; gap: 0.4rem; }
+.setting-row.checkbox-row { flex-direction: row; align-items: center; justify-content: space-between; }
+.setting-label { font-size: 0.92rem; font-weight: 600; }
+.setting-value { color: var(--accent); font-weight: 600; }
 .setting-row input[type="range"] { width: 100%; }
 .setting-row input[type="checkbox"] { width: 1.3rem; height: 1.3rem; }
-
-.settings-actions {
-  margin-top: 0.4rem;
-}
-
-.settings-actions .btn { width: 100%; }
 
 [hidden] { display: none !important; }
 
