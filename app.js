@@ -136,8 +136,14 @@ function checkSilentCrossing() {
   const threshold = settings.silentBelowMph;
   const below = threshold > 0 && currentMph() < threshold;
   if (threshold > 0 && wasBelowSilent && !below && hasSpeedFix) {
-    announceSpeed();
-    restartAnnounceTimer();
+    // Skip if this same speed was already announced within the interval,
+    // e.g. dipping to 19 and straight back to 20.
+    const n = Math.min(Math.round(currentMph()), MAX_ANNOUNCE_MPH);
+    const last = lastSpokenAt.get(n);
+    if (last === undefined || Date.now() - last >= settings.intervalSec * 1000) {
+      announceSpeed();
+      restartAnnounceTimer();
+    }
   }
   wasBelowSilent = below || threshold === 0;
 }
@@ -197,10 +203,13 @@ async function loadClip(n) {
   return buffer;
 }
 
+const lastSpokenAt = new Map(); // number -> time it was last announced
+
 async function announceSpeed() {
   if (!hasSpeedFix) return;
   const n = Math.min(Math.round(currentMph()), MAX_ANNOUNCE_MPH);
   if (settings.muted || n < 1 || currentMph() < settings.silentBelowMph) return;
+  lastSpokenAt.set(n, Date.now());
   try {
     const buffer = await loadClip(n);
     if (!buffer) return;
