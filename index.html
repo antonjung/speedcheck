@@ -48,9 +48,17 @@
   </div>
 
   <div class="controls">
-    <span class="setting-label">Announce every <span class="setting-value" id="valInterval"></span></span>
-    <div class="slider-box">
-      <input type="range" id="setInterval" min="1" max="60" step="1" aria-label="Announce interval in seconds" />
+    <div class="control">
+      <span class="setting-label">Announce every <span class="setting-value" id="valInterval"></span></span>
+      <div class="slider-box">
+        <input type="range" id="setInterval" min="1" max="60" step="1" aria-label="Announce interval in seconds" />
+      </div>
+    </div>
+    <div class="control">
+      <span class="setting-label">Silent below <span class="setting-value" id="valSilent"></span></span>
+      <div class="slider-box">
+        <input type="range" id="setSilent" min="0" max="60" step="1" aria-label="Stay silent below this speed in mph" />
+      </div>
     </div>
   </div>
 

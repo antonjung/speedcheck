@@ -13,6 +13,7 @@ const MAX_ANNOUNCE_MPH = 100; // highest recorded clip
 
 const DEFAULT_SETTINGS = {
   intervalSec: 10, // seconds between spoken speed announcements
+  silentBelowMph: 0, // no announcements while slower than this
 };
 
 function loadSettings() {
@@ -48,6 +49,8 @@ const testSpeedUp10 = document.getElementById("testSpeedUp10");
 
 const setIntervalEl = document.getElementById("setInterval");
 const valInterval = document.getElementById("valInterval");
+const setSilent = document.getElementById("setSilent");
+const valSilent = document.getElementById("valSilent");
 
 // ---------- State ----------
 
@@ -181,7 +184,7 @@ async function loadClip(n) {
 async function announceSpeed() {
   if (!hasSpeedFix) return;
   const n = Math.min(Math.round(currentMph()), MAX_ANNOUNCE_MPH);
-  if (n < 1) return;
+  if (n < 1 || currentMph() < settings.silentBelowMph) return;
   try {
     const buffer = await loadClip(n);
     if (!buffer) return;
@@ -292,7 +295,15 @@ document.addEventListener("visibilitychange", () => {
 function initControls() {
   setIntervalEl.value = settings.intervalSec;
   valInterval.textContent = `${settings.intervalSec} s`;
+  setSilent.value = settings.silentBelowMph;
+  valSilent.textContent = `${settings.silentBelowMph} mph`;
 }
+
+setSilent.addEventListener("input", () => {
+  settings.silentBelowMph = parseInt(setSilent.value, 10);
+  valSilent.textContent = `${settings.silentBelowMph} mph`;
+  saveSettings();
+});
 
 setIntervalEl.addEventListener("input", () => {
   settings.intervalSec = parseInt(setIntervalEl.value, 10);
