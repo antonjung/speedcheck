@@ -5,27 +5,17 @@
 const BUILD_VERSION = "1.0.28"; // kept in sync with VERSION / CACHE_NAME by deploy.sh on every deploy
 const STORAGE_KEY = "speed-guard-settings";
 const MPS_TO_MPH = 2.2369362920544;
-const GPS_STALE_MS = 6000; // no fresh fix for this long -> show as stale
-const ACCEL_WINDOW_MS = 3000; // history span used to measure acceleration
-const SAMPLE_MS = 250;
-const MIN_PROJECTION_SPAN_MS = 1000; // need at least this much history to trust an acceleration figure
-const MIN_ACCEL_MPH_PER_S = 0.3; // ignore smaller "acceleration" as GPS noise
-const MAX_PROJECTION_MPH = 10; // never project further ahead than this
-const MIN_TONE_HZ = 500;
-const MAX_TONE_HZ = 2500;
-const VOICE_SIGNS = [20, 30, 40, 50, 60, 70];
-const VOICE_SPEEDS = VOICE_SIGNS.flatMap((sign) => [sign - 1, sign, sign + 1]); // 19, 20, 21, 29, 30, 31, ...
-const VOICE_DROP_HYSTERESIS_MPH = 1; // must fall this far below a speed before the advice is given
-const MAX_RECORDING_MS = 10000;
+const GPS_STALE_MS = 6000; // no fresh fix for this long -> reading is not trusted
+const DIAL_MAX_MPH = 100;
+const DIAL_START_DEG = -135; // needle angle at 0 mph (0 = straight up)
+const DIAL_SWEEP_DEG = 270;
+const MAX_ANNOUNCE_MPH = 100; // highest recorded clip
 
 const DEFAULT_SETTINGS = {
-  soundAlerts: true,
-  tonePitch: 1200, // Hz, fundamental of the exceed-limit tone - user-adjustable in Settings
+  speak: true,
+  intervalSec: 10, // seconds between spoken speed announcements
   wakeLock: true,
-  speedLimit: null, // number, mph
-  lookaheadSec: 3, // how far ahead to estimate speed, to offset GPS lag - user-adjustable in Settings
-  autoMode: false, // voice mode: no limit buttons, spoken warning/advice at each of VOICE_SPEEDS
-  testMode: false, // drive speed manually instead of via GPS, for exercising warnings
+  testMode: false, // drive speed manually instead of via GPS
 };
 
 function loadSettings() {
@@ -38,8 +28,6 @@ function loadSettings() {
 }
 
 const settings = loadSettings();
-// Migrate pitches saved under the old, much lower range.
-if (settings.tonePitch < MIN_TONE_HZ) settings.tonePitch = DEFAULT_SETTINGS.tonePitch;
 
 function saveSettings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -47,52 +35,36 @@ function saveSettings() {
 
 // ---------- DOM ----------
 
-const buildVersionEl = document.getElementById("buildVersion");
-buildVersionEl.textContent = `build ${BUILD_VERSION}`;
+document.getElementById("buildVersion").textContent = `build ${BUILD_VERSION}`;
 
-const mainView = document.getElementById("mainView");
 const gpsInfo = document.getElementById("gpsInfo");
-const stopBtn = document.getElementById("stopBtn");
 const settingsBtn = document.getElementById("settingsBtn");
-
-const statusPanel = document.getElementById("statusPanel");
 const speedValueEl = document.getElementById("speedValue");
 const statusMessageEl = document.getElementById("statusMessage");
-
-const speedSigns = document.getElementById("speedSigns");
+const dialEl = document.getElementById("dial");
 
 const testControls = document.getElementById("testControls");
-const actualSpeedEl = document.getElementById("actualSpeed");
 const testSpeedDown = document.getElementById("testSpeedDown");
 const testSpeedUp = document.getElementById("testSpeedUp");
-const testPresetUnder = document.getElementById("testPresetUnder");
-const testPresetAt = document.getElementById("testPresetAt");
-const testPresetOver = document.getElementById("testPresetOver");
+const testSpeedDown10 = document.getElementById("testSpeedDown10");
+const testSpeedUp10 = document.getElementById("testSpeedUp10");
 
 const settingsPanel = document.getElementById("settingsPanel");
 const settingsCloseBtn = document.getElementById("settingsCloseBtn");
-const setSoundAlerts = document.getElementById("setSoundAlerts");
-const setTonePitch = document.getElementById("setTonePitch");
-const valTonePitch = document.getElementById("valTonePitch");
-const setLookahead = document.getElementById("setLookahead");
-const valLookahead = document.getElementById("valLookahead");
+const setSpeak = document.getElementById("setSpeak");
+const setIntervalEl = document.getElementById("setInterval");
+const valInterval = document.getElementById("valInterval");
 const setWakeLock = document.getElementById("setWakeLock");
 const setTestMode = document.getElementById("setTestMode");
-const setAutoMode = document.getElementById("setAutoMode");
-const voiceRecorder = document.getElementById("voiceRecorder");
-const voiceRows = document.getElementById("voiceRows");
 
 // ---------- State ----------
 
 let watchId = null;
 let lastPosition = null; // { latitude, longitude, timestamp } for haversine fallback
 let lastFixAt = 0;
-let hasSpeedFix = false; // never assert "within limit" off a speed we don't actually have
-let displaySpeedMps = 0; // smoothed, as measured (lags real speed)
-let speedHistory = []; // { t, mph } samples from the last ACCEL_WINDOW_MS, oldest first
-let currentStatus = "no-fix"; // 'no-fix' | 'no-limit' | 'ok' | 'exceeding'
+let hasSpeedFix = false;
+let displaySpeedMps = 0; // smoothed
 let wakeLockSentinel = null;
-
 let audioCtx = null;
 
 // ---------- Unit helpers (mph throughout) ----------
@@ -103,6 +75,10 @@ function mpsToMph(mps) {
 
 function mphToMps(mph) {
   return mph / MPS_TO_MPH;
+}
+
+function currentMph() {
+  return mpsToMph(displaySpeedMps);
 }
 
 // ---------- Geodesy fallback (when coords.speed is unavailable) ----------
@@ -118,120 +94,56 @@ function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ---------- Rendering ----------
+// ---------- Dial ----------
 
-// The measured speed trails real speed by a few seconds, so the speed we
-// report is an estimate of where it will be settings.lookaheadSec from now: measured
-// speed plus current acceleration x lookahead. Only acceleration counts -
-// steady or falling speed is reported as measured, so 39 in a 40 never alerts
-// on its own and slowing down clears the alert at the plain limit.
-function sampleSpeed() {
-  const now = Date.now();
-  speedHistory.push({ t: now, mph: mpsToMph(displaySpeedMps) });
-  while (speedHistory.length > 1 && speedHistory[0].t < now - ACCEL_WINDOW_MS) {
-    speedHistory.shift();
-  }
+const SVG_NS = "http://www.w3.org/2000/svg";
+let needleEl = null;
+
+function svgEl(name, attrs) {
+  const el = document.createElementNS(SVG_NS, name);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
 }
 
-function estimatedMph() {
-  const actual = mpsToMph(displaySpeedMps);
-  if (speedHistory.length < 2) return actual;
-  const first = speedHistory[0];
-  const last = speedHistory[speedHistory.length - 1];
-  const spanMs = last.t - first.t;
-  if (spanMs < MIN_PROJECTION_SPAN_MS) return actual;
-  const accel = (last.mph - first.mph) / (spanMs / 1000); // mph per second
-  if (accel < MIN_ACCEL_MPH_PER_S) return actual;
-  return actual + Math.min(accel * settings.lookaheadSec, MAX_PROJECTION_MPH);
+function polar(r, deg) {
+  const rad = ((deg - 90) * Math.PI) / 180;
+  return [100 + r * Math.cos(rad), 100 + r * Math.sin(rad)];
+}
+
+function buildDial() {
+  const [x0, y0] = polar(86, DIAL_START_DEG);
+  const [x1, y1] = polar(86, DIAL_START_DEG + DIAL_SWEEP_DEG);
+  dialEl.append(svgEl("path", { class: "track", d: `M ${x0} ${y0} A 86 86 0 1 1 ${x1} ${y1}` }));
+  for (let mph = 0; mph <= DIAL_MAX_MPH; mph += 5) {
+    const deg = DIAL_START_DEG + (mph / DIAL_MAX_MPH) * DIAL_SWEEP_DEG;
+    const major = mph % 10 === 0;
+    const [ax, ay] = polar(major ? 76 : 80, deg);
+    const [bx, by] = polar(86, deg);
+    dialEl.append(svgEl("line", { class: "tick" + (major ? " major" : ""), x1: ax, y1: ay, x2: bx, y2: by }));
+    if (major) {
+      const [lx, ly] = polar(65, deg);
+      const label = svgEl("text", { class: "label", x: lx, y: ly });
+      label.textContent = String(mph);
+      dialEl.append(label);
+    }
+  }
+  needleEl = svgEl("g", { style: "transition: transform 0.4s ease-out; transform-origin: 100px 100px;" });
+  needleEl.append(svgEl("line", { class: "needle", x1: 100, y1: 100, x2: 100, y2: 28 }));
+  dialEl.append(needleEl, svgEl("circle", { class: "hub", cx: 100, cy: 100, r: 6 }));
 }
 
 function renderSpeed() {
-  speedValueEl.textContent = Math.round(estimatedMph()).toString();
-  actualSpeedEl.hidden = !settings.testMode;
-  actualSpeedEl.textContent = `actual ${Math.round(mpsToMph(displaySpeedMps))}`;
-}
-
-function nextVoiceSpeed() {
-  return VOICE_SPEEDS.find((speed) => !crossedSpeeds.has(speed));
-}
-
-function renderLimit() {
-  const noLimit = settings.speedLimit == null;
-  testPresetUnder.disabled = noLimit;
-  testPresetAt.disabled = noLimit;
-  testPresetOver.disabled = noLimit;
-  for (const btn of speedSigns.querySelectorAll(".speed-sign")) {
-    const limit = parseInt(btn.dataset.limit, 10);
-    // Voice mode: the buttons are indicators, lighting the next speed to be reached.
-    // Above the top speed there is no next one, so the top sign flashes instead.
-    const next = nextVoiceSpeed();
-    const nextSign = next === undefined ? undefined : Math.round(next / 10) * 10;
-    const topFlash = settings.autoMode && next === undefined && limit === VOICE_SIGNS[VOICE_SIGNS.length - 1];
-    btn.dataset.active = String(settings.autoMode ? limit === nextSign || topFlash : !noLimit && limit === settings.speedLimit);
-    btn.dataset.flash = String(topFlash);
-  }
+  const mph = currentMph();
+  speedValueEl.textContent = Math.round(mph).toString();
+  const frac = Math.max(0, Math.min(1, mph / DIAL_MAX_MPH));
+  needleEl.style.transform = `rotate(${DIAL_START_DEG + frac * DIAL_SWEEP_DEG}deg)`;
 }
 
 function renderGpsInfo(accuracyM) {
-  if (accuracyM == null) {
-    gpsInfo.textContent = "GPS —";
-  } else {
-    gpsInfo.textContent = `GPS ±${Math.round(accuracyM)}m`;
-  }
+  gpsInfo.textContent = accuracyM == null ? "GPS —" : `GPS ±${Math.round(accuracyM)}m`;
 }
 
-function renderStatusMessage() {
-  switch (currentStatus) {
-    case "no-fix":
-      statusMessageEl.textContent = "Waiting for GPS…";
-      break;
-    case "no-limit":
-      statusMessageEl.textContent = "";
-      break;
-    case "ok":
-      statusMessageEl.textContent = "Within limit.";
-      break;
-    case "exceeding":
-      statusMessageEl.textContent = "Over the limit!";
-      break;
-  }
-}
-
-// ---------- Warning engine ----------
-
-function evaluateStatus() {
-  if (!hasSpeedFix) return "no-fix";
-  if (settings.autoMode || settings.speedLimit == null) return "no-limit";
-  return estimatedMph() > settings.speedLimit ? "exceeding" : "ok";
-}
-
-function updateStatus() {
-  updateVoiceAlerts();
-  if (settings.autoMode) renderLimit();
-  const next = evaluateStatus();
-  if (next !== currentStatus) {
-    const prev = currentStatus;
-    currentStatus = next;
-    statusPanel.dataset.status = currentStatus;
-    mainView.dataset.status = currentStatus;
-    renderStatusMessage();
-    onStatusTransition(prev, next);
-  }
-}
-
-function onStatusTransition(prev, next) {
-  if (next === "exceeding") {
-    startExceedTone();
-  } else {
-    stopExceedTone();
-  }
-}
-
-// ---------- Audio: exceed-limit alert ----------
-//
-// A single plain sine tone that plays continuously for as long as the
-// current speed is over the limit, and stops the moment it drops back
-// to or below it.
+// ---------- Audio ----------
 
 function ensureAudioCtx() {
   if (!audioCtx) {
@@ -255,281 +167,46 @@ function ensureAudioCtx() {
   return audioCtx;
 }
 
-let exceedToneNode = null; // { osc, gain }
-
-function startExceedTone() {
-  if (exceedToneNode || !settings.soundAlerts) return;
-  const ctx = ensureAudioCtx();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-  const fundamental = settings.tonePitch || DEFAULT_SETTINGS.tonePitch;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = "sine";
-  osc.frequency.value = fundamental;
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.35, now + 0.03);
-  osc.connect(gain).connect(ctx.destination);
-  osc.start(now);
-  exceedToneNode = { osc, gain };
-}
-
-function stopExceedTone() {
-  if (!exceedToneNode) return;
-  const ctx = audioCtx;
-  const now = ctx ? ctx.currentTime : 0;
-  const { osc, gain } = exceedToneNode;
-  try {
-    gain.gain.cancelScheduledValues(now);
-    gain.gain.setValueAtTime(gain.gain.value, now);
-    gain.gain.linearRampToValueAtTime(0.0001, now + 0.12);
-    osc.stop(now + 0.15);
-  } catch (err) {
-    /* already stopped */
-  }
-  exceedToneNode = null;
-}
-
-// Short preview beep for auditioning a pitch in Settings, distinct from the
-// sustained alarm so it doesn't linger.
-function previewTone() {
-  if (!settings.soundAlerts) return;
-  const ctx = ensureAudioCtx();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-  const fundamental = settings.tonePitch || DEFAULT_SETTINGS.tonePitch;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = "sine";
-  osc.frequency.value = fundamental;
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.35, now + 0.02);
-  gain.gain.setValueAtTime(0.35, now + 0.3);
-  gain.gain.linearRampToValueAtTime(0.0001, now + 0.4);
-  osc.connect(gain).connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.42);
-}
-
-// ---------- Voice mode: spoken warning / advice per speed ----------
+// ---------- Spoken speed ----------
 //
-// Recordings live in IndexedDB (blobs are too big for localStorage). Each
-// speed has a "warning" (played once when speed reaches it) and an "advice"
-// (played when speed falls back below it). Unrecorded ones fall back to the
-// device's speech synthesis.
+// audio/1.mp3 ... audio/100.mp3 are pre-generated recordings (British male
+// voice) of each number. Every settings.intervalSec seconds the current speed
+// is played if it is above zero.
 
-const DB_NAME = "speed-guard-voice";
-const DB_STORE = "clips";
-const clipCache = new Map(); // key -> Blob | null
+const clipBuffers = new Map(); // number -> AudioBuffer
 
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+async function loadClip(n) {
+  if (clipBuffers.has(n)) return clipBuffers.get(n);
+  const ctx = ensureAudioCtx();
+  if (!ctx) return null;
+  const res = await fetch(`audio/${n}.mp3`);
+  if (!res.ok) throw new Error(`clip ${n}`);
+  const buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+  clipBuffers.set(n, buffer);
+  return buffer;
 }
 
-async function dbOp(mode, fn) {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, mode);
-    const req = fn(tx.objectStore(DB_STORE));
-    tx.oncomplete = () => resolve(req.result);
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-function clipKey(kind, speed) {
-  return `${kind}-${speed}`;
-}
-
-async function loadClips() {
+async function announceSpeed() {
+  if (!settings.speak || !hasSpeedFix) return;
+  const n = Math.min(Math.round(currentMph()), MAX_ANNOUNCE_MPH);
+  if (n < 1) return;
   try {
-    for (const speed of VOICE_SPEEDS) {
-      for (const kind of ["warning", "advice"]) {
-        const blob = await dbOp("readonly", (st) => st.get(clipKey(kind, speed)));
-        clipCache.set(clipKey(kind, speed), blob || null);
-      }
-    }
+    const buffer = await loadClip(n);
+    if (!buffer) return;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(audioCtx.destination);
+    src.start();
   } catch (err) {
-    /* IndexedDB unavailable: everything falls back to speech */
+    /* clip unavailable (e.g. offline and not cached): stay silent */
   }
 }
 
-async function saveClip(kind, speed, blob) {
-  clipCache.set(clipKey(kind, speed), blob);
-  try {
-    await dbOp("readwrite", (st) => st.put(blob, clipKey(kind, speed)));
-  } catch (err) {
-    /* kept in memory for this session */
-  }
-}
+let announceTimer = null;
 
-async function deleteClip(kind, speed) {
-  clipCache.set(clipKey(kind, speed), null);
-  try {
-    await dbOp("readwrite", (st) => st.delete(clipKey(kind, speed)));
-  } catch (err) {
-    /* ignore */
-  }
-}
-
-function fallbackText(kind, speed) {
-  return String(speed);
-}
-
-let voiceSource = null;
-
-function stopVoice() {
-  if (voiceSource) {
-    try {
-      voiceSource.stop();
-    } catch (err) {
-      /* already stopped */
-    }
-    voiceSource = null;
-  }
-  if ("speechSynthesis" in window) speechSynthesis.cancel();
-}
-
-async function playVoice(kind, speed) {
-  stopVoice();
-  const blob = clipCache.get(clipKey(kind, speed));
-  const ctx = blob ? ensureAudioCtx() : null;
-  if (blob && ctx) {
-    try {
-      const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.connect(ctx.destination);
-      src.start();
-      voiceSource = src;
-      return;
-    } catch (err) {
-      /* undecodable clip: fall through to speech */
-    }
-  }
-  if ("speechSynthesis" in window) {
-    speechSynthesis.speak(new SpeechSynthesisUtterance(fallbackText(kind, speed)));
-  }
-}
-
-const crossedSpeeds = new Set();
-
-function resetVoiceState() {
-  crossedSpeeds.clear();
-  stopVoice();
-}
-
-function updateVoiceAlerts() {
-  if (!settings.autoMode || !settings.soundAlerts || !hasSpeedFix) return;
-  const mph = estimatedMph();
-  let warn = null;
-  let advise = null;
-  for (const speed of VOICE_SPEEDS) {
-    const crossed = crossedSpeeds.has(speed);
-    if (!crossed && mph >= speed) {
-      crossedSpeeds.add(speed);
-      warn = speed; // keeps the highest newly reached
-    } else if (crossed && mph < speed - VOICE_DROP_HYSTERESIS_MPH) {
-      crossedSpeeds.delete(speed);
-      if (advise == null) advise = speed; // keeps the lowest newly dropped below
-    }
-  }
-  if (warn != null) playVoice("warning", warn);
-  else if (advise != null) playVoice("advice", advise);
-}
-
-let recorder = null; // { kind, speed, mr, timer }
-
-async function toggleRecording(kind, speed) {
-  if (recorder) {
-    recorder.mr.stop();
-    return;
-  }
-  if (!navigator.mediaDevices || !window.MediaRecorder) {
-    alert("Recording isn't supported in this browser.");
-    return;
-  }
-  stopVoice();
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (err) {
-    alert("Microphone access was denied.");
-    return;
-  }
-  const mr = new MediaRecorder(stream);
-  const chunks = [];
-  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  mr.onstop = async () => {
-    clearTimeout(recorder.timer);
-    stream.getTracks().forEach((t) => t.stop());
-    recorder = null;
-    if (chunks.length) await saveClip(kind, speed, new Blob(chunks, { type: mr.mimeType }));
-    renderVoiceRows();
-  };
-  recorder = { kind, speed, mr, timer: setTimeout(() => mr.stop(), MAX_RECORDING_MS) };
-  mr.start();
-  renderVoiceRows();
-}
-
-function voiceButton(text, className, onClick, disabled) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = className;
-  btn.textContent = text;
-  btn.disabled = disabled;
-  btn.addEventListener("click", onClick);
-  return btn;
-}
-
-function renderVoiceRows() {
-  voiceRows.textContent = "";
-  for (const speed of VOICE_SPEEDS) {
-    for (const kind of ["warning", "advice"]) {
-      const row = document.createElement("div");
-      row.className = "voice-row";
-      const label = document.createElement("span");
-      label.className = "voice-speed";
-      label.textContent = kind === "warning" ? String(speed) : "";
-      const kindEl = document.createElement("span");
-      kindEl.className = "voice-kind";
-      kindEl.textContent = kind === "warning" ? "Warning" : "Advice";
-      row.append(label, kindEl);
-
-      const isRecording = !!recorder && recorder.kind === kind && recorder.speed === speed;
-      row.append(
-        voiceButton(isRecording ? "Stop" : "Record", "btn small" + (isRecording ? " recording" : ""), () => toggleRecording(kind, speed), !!recorder && !isRecording),
-        voiceButton("Play", "btn small", () => {
-          ensureAudioCtx();
-          playVoice(kind, speed);
-        }, !!recorder)
-      );
-      if (clipCache.get(clipKey(kind, speed))) {
-        row.append(
-          voiceButton("Clear", "btn small", async () => {
-            await deleteClip(kind, speed);
-            renderVoiceRows();
-          }, !!recorder)
-        );
-      } else {
-        const has = document.createElement("span");
-        has.className = "voice-has";
-        has.textContent = "default voice";
-        row.append(has);
-      }
-      voiceRows.append(row);
-    }
-  }
-}
-
-function applyAutoModeUI() {
-  speedSigns.classList.toggle("indicator-only", settings.autoMode);
-  stopBtn.hidden = settings.autoMode;
-  voiceRecorder.hidden = !settings.autoMode;
+function restartAnnounceTimer() {
+  clearInterval(announceTimer);
+  announceTimer = setInterval(announceSpeed, settings.intervalSec * 1000);
 }
 
 // ---------- Geolocation / speed tracking ----------
@@ -556,8 +233,8 @@ function onPosition(pos) {
     if (speedMps < 0.4) speedMps = 0;
     displaySpeedMps = displaySpeedMps * 0.55 + speedMps * 0.45;
     hasSpeedFix = true;
+    statusMessageEl.textContent = "";
     renderSpeed();
-    updateStatus();
   }
 
   renderGpsInfo(accuracy);
@@ -566,7 +243,6 @@ function onPosition(pos) {
 function onPositionError(err) {
   gpsInfo.textContent = err && err.code === 1 ? "GPS — blocked" : "GPS — no fix";
   hasSpeedFix = false;
-  updateStatus();
   statusMessageEl.textContent = describeGeoError(err);
 }
 
@@ -587,32 +263,17 @@ function startTracking() {
 function startTestTracking() {
   gpsInfo.textContent = "TEST MODE";
   gpsInfo.classList.add("test-mode");
+  statusMessageEl.textContent = "";
   hasSpeedFix = true;
   renderSpeed();
-  updateStatus();
   requestWakeLock();
 }
-
-// Sample at a steady rate so a held speed ages out of the acceleration
-// estimate, and re-evaluate between GPS fixes.
-setInterval(() => {
-  if (!hasSpeedFix) {
-    speedHistory.length = 0;
-    return;
-  }
-  sampleSpeed();
-  renderSpeed();
-  updateStatus();
-}, SAMPLE_MS);
 
 setInterval(() => {
   if (watchId != null && lastFixAt && Date.now() - lastFixAt > GPS_STALE_MS) {
     gpsInfo.textContent = "GPS — no fix";
-    if (hasSpeedFix) {
-      // Stop alerting off a speed reading that may now be seconds out of date.
-      hasSpeedFix = false;
-      updateStatus();
-    }
+    // Stop announcing a speed reading that may now be seconds out of date.
+    hasSpeedFix = false;
   }
 }, 2000);
 
@@ -635,43 +296,20 @@ function releaseWakeLock() {
 }
 
 document.addEventListener("visibilitychange", () => {
-  // Re-acquire whenever the app comes back on screen, whether tracking is
-  // real GPS or Test mode - the sentinel itself is released by the browser
-  // whenever the tab goes out of view.
+  // The sentinel is released by the browser whenever the tab goes out of view.
   if (document.visibilityState === "visible" && settings.wakeLock) {
     requestWakeLock();
   }
 });
 
-// ---------- Speed limit setting ----------
-
-function setSpeedLimit(value) {
-  settings.speedLimit = value;
-  saveSettings();
-  renderLimit();
-  updateStatus();
-}
-
-speedSigns.addEventListener("click", (e) => {
-  const btn = e.target.closest(".speed-sign");
-  if (!btn || settings.autoMode) return;
-  ensureAudioCtx(); // reliable audio-unlock gesture - there's no Start button to do this anymore
-  setSpeedLimit(parseInt(btn.dataset.limit, 10));
-});
-
 // ---------- Settings panel ----------
 
 function openSettings() {
-  setSoundAlerts.checked = settings.soundAlerts;
-  setTonePitch.value = settings.tonePitch;
-  valTonePitch.textContent = `${settings.tonePitch} Hz`;
-  setLookahead.value = settings.lookaheadSec;
-  valLookahead.textContent = `${settings.lookaheadSec} s`;
+  setSpeak.checked = settings.speak;
+  setIntervalEl.value = settings.intervalSec;
+  valInterval.textContent = `${settings.intervalSec} s`;
   setWakeLock.checked = settings.wakeLock;
   setTestMode.checked = settings.testMode;
-  setAutoMode.checked = settings.autoMode;
-  applyAutoModeUI();
-  renderVoiceRows();
   settingsPanel.hidden = false;
 }
 
@@ -680,46 +318,17 @@ settingsCloseBtn.addEventListener("click", () => {
   settingsPanel.hidden = true;
 });
 
-setSoundAlerts.addEventListener("change", () => {
-  settings.soundAlerts = setSoundAlerts.checked;
-  saveSettings();
-  if (!settings.soundAlerts) {
-    stopExceedTone();
-  } else if (currentStatus === "exceeding") {
-    startExceedTone();
-  }
-});
-
-setTonePitch.addEventListener("input", () => {
-  settings.tonePitch = parseInt(setTonePitch.value, 10);
-  valTonePitch.textContent = `${settings.tonePitch} Hz`;
-  // Retune live if the alarm is already sounding while the slider is dragged.
-  if (exceedToneNode) exceedToneNode.osc.frequency.value = settings.tonePitch;
-});
-
-setTonePitch.addEventListener("change", () => {
-  saveSettings();
-  ensureAudioCtx(); // this is a user gesture, safe to unlock audio here too
-  if (currentStatus !== "exceeding") previewTone();
-});
-
-setLookahead.addEventListener("input", () => {
-  settings.lookaheadSec = parseFloat(setLookahead.value);
-  valLookahead.textContent = `${settings.lookaheadSec} s`;
-  saveSettings();
-  renderSpeed();
-  updateStatus();
-});
-
-setAutoMode.addEventListener("change", () => {
-  settings.autoMode = setAutoMode.checked;
-  if (settings.autoMode) settings.speedLimit = null;
+setSpeak.addEventListener("change", () => {
+  settings.speak = setSpeak.checked;
   saveSettings();
   ensureAudioCtx();
-  resetVoiceState();
-  applyAutoModeUI();
-  renderLimit();
-  updateStatus();
+});
+
+setIntervalEl.addEventListener("input", () => {
+  settings.intervalSec = parseInt(setIntervalEl.value, 10);
+  valInterval.textContent = `${settings.intervalSec} s`;
+  saveSettings();
+  restartAnnounceTimer();
 });
 
 setWakeLock.addEventListener("change", () => {
@@ -737,33 +346,18 @@ function applyTestModeUI() {
 }
 
 function setTestSpeedMph(value) {
-  const clamped = Math.max(0, Math.min(200, value));
-  displaySpeedMps = mphToMps(clamped);
+  displaySpeedMps = mphToMps(Math.max(0, Math.min(200, value)));
   hasSpeedFix = true;
-  sampleSpeed();
   renderSpeed();
-  updateStatus();
 }
 
-testSpeedDown.addEventListener("click", () => {
-  setTestSpeedMph(Math.round(mpsToMph(displaySpeedMps)) - 1);
-});
-testSpeedUp.addEventListener("click", () => {
-  setTestSpeedMph(Math.round(mpsToMph(displaySpeedMps)) + 1);
-});
-
-testPresetUnder.addEventListener("click", () => {
-  if (settings.speedLimit == null) return;
-  setTestSpeedMph(settings.speedLimit - 5);
-});
-testPresetAt.addEventListener("click", () => {
-  if (settings.speedLimit == null) return;
-  setTestSpeedMph(settings.speedLimit);
-});
-testPresetOver.addEventListener("click", () => {
-  if (settings.speedLimit == null) return;
-  setTestSpeedMph(settings.speedLimit + 5);
-});
+function nudgeTestSpeed(delta) {
+  setTestSpeedMph(Math.round(currentMph()) + delta);
+}
+testSpeedDown.addEventListener("click", () => nudgeTestSpeed(-1));
+testSpeedUp.addEventListener("click", () => nudgeTestSpeed(1));
+testSpeedDown10.addEventListener("click", () => nudgeTestSpeed(-10));
+testSpeedUp10.addEventListener("click", () => nudgeTestSpeed(10));
 
 setTestMode.addEventListener("change", () => {
   const wasTestMode = settings.testMode;
@@ -772,7 +366,7 @@ setTestMode.addEventListener("change", () => {
 
   if (wasTestMode !== settings.testMode) {
     if (settings.testMode) {
-      // Switch live from real GPS to manual test control, keeping continuity.
+      // Switch live from real GPS to manual test control.
       if (watchId != null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
@@ -783,7 +377,7 @@ setTestMode.addEventListener("change", () => {
       gpsInfo.classList.remove("test-mode");
       gpsInfo.textContent = "GPS —";
       hasSpeedFix = false;
-      updateStatus();
+      statusMessageEl.textContent = "Waiting for GPS…";
       startTracking();
     }
   }
@@ -806,25 +400,9 @@ function describeGeoError(err) {
   }
 }
 
-// The top-right button clears the current limit (and so silences any alarm)
-// rather than stopping the app - there's no separate start/stop screen to
-// return to, tracking just runs continuously from page load.
-stopBtn.addEventListener("click", () => {
-  ensureAudioCtx();
-  settings.speedLimit = null;
-  saveSettings();
-  renderLimit();
-  updateStatus();
-});
-
-// AudioContext needs a user gesture to unlock, and there's no Start button
-// to hang that off anymore. The speed-sign and clear buttons above already
-// unlock it on the click a driver is most likely to make first; these are a
-// fallback for any other first interaction (e.g. opening Settings), covering
-// multiple gesture types since browsers (notably iOS Safari) vary on which
-// one they'll actually accept for unlocking Web Audio.
-// Keep retrying on every gesture until the context is actually running, and
-// re-arm if the OS suspends it again (e.g. after backgrounding the app).
+// AudioContext needs a user gesture to unlock. Keep retrying on every gesture
+// until the context is actually running (iOS Safari varies on which gesture it
+// accepts), and re-arm if the OS suspends it again after backgrounding.
 for (const type of ["pointerdown", "touchend", "click", "keydown"]) {
   document.addEventListener(type, () => ensureAudioCtx());
 }
@@ -834,19 +412,10 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Never carry a limit over from a previous session - opening the app should
-// never immediately start warning off a stale choice.
-settings.speedLimit = null;
-saveSettings();
-
+buildDial();
 applyTestModeUI();
-applyAutoModeUI();
-loadClips().then(renderVoiceRows);
-statusPanel.dataset.status = currentStatus;
-mainView.dataset.status = currentStatus;
-renderSpeed();
-renderLimit();
-renderStatusMessage();
+restartAnnounceTimer();
+statusMessageEl.textContent = "Waiting for GPS…";
 
 if (!settings.testMode && !("geolocation" in navigator)) {
   statusMessageEl.textContent = "This browser doesn't support geolocation.";

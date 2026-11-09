@@ -7,6 +7,7 @@ const PRECACHE_URLS = [
   "icon-192.png",
   "icon-512.png",
   "favicon-32.png",
+  ...Array.from({ length: 100 }, (_, i) => `audio/${i + 1}.mp3`),
 ];
 
 self.addEventListener("install", (event) => {

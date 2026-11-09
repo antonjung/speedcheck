@@ -5,7 +5,7 @@
 <title>Speed Guard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#0a0e14" />
-<meta name="description" content="Tracks your driving speed via GPS and warns you when you're near or over a speed limit you set." />
+<meta name="description" content="Shows your driving speed from GPS on a dial and announces it at an interval you choose." />
 
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="favicon-32.png" sizes="32x32" />
@@ -26,37 +26,24 @@
       <div id="gpsInfo" class="gps-info">GPS &mdash;</div>
       <p id="statusMessage" class="status-message"></p>
     </div>
-    <button id="stopBtn" class="btn icon-btn danger" aria-label="Clear speed limit">&#10006;</button>
+    <span class="top-bar-spacer"></span>
   </div>
 
-  <div id="statusPanel" class="status-panel" data-status="no-fix">
+  <div class="dial-wrap">
+    <svg id="dial" class="dial" viewBox="0 0 200 200" aria-label="Speedometer"></svg>
     <div class="speed-readout">
       <span id="speedValue">0</span>
-      <span id="actualSpeed" class="actual-speed" hidden></span>
-    </div>
-  </div>
-
-  <div class="manual-entry">
-    <div class="speed-signs" id="speedSigns">
-      <button type="button" class="speed-sign" data-limit="20">20</button>
-      <button type="button" class="speed-sign" data-limit="30">30</button>
-      <button type="button" class="speed-sign" data-limit="40">40</button>
-      <button type="button" class="speed-sign" data-limit="50">50</button>
-      <button type="button" class="speed-sign" data-limit="60">60</button>
-      <button type="button" class="speed-sign" data-limit="70">70</button>
+      <span class="unit">mph</span>
     </div>
   </div>
 
   <div id="testControls" class="test-controls" hidden>
     <span class="test-controls-label">Test speed</span>
     <div class="test-presets">
-      <button id="testSpeedDown" type="button" class="btn small" aria-label="Decrease test speed by 1 mph">&minus; 1 mph</button>
-      <button id="testSpeedUp" type="button" class="btn small" aria-label="Increase test speed by 1 mph">+ 1 mph</button>
-    </div>
-    <div class="test-presets">
-      <button id="testPresetUnder" type="button" class="btn small">Limit &minus;5</button>
-      <button id="testPresetAt" type="button" class="btn small">At limit</button>
-      <button id="testPresetOver" type="button" class="btn small">Limit +5</button>
+      <button id="testSpeedDown10" type="button" class="btn small">&minus; 10</button>
+      <button id="testSpeedDown" type="button" class="btn small">&minus; 1</button>
+      <button id="testSpeedUp" type="button" class="btn small">+ 1</button>
+      <button id="testSpeedUp10" type="button" class="btn small">+ 10</button>
     </div>
   </div>
 
@@ -67,33 +54,15 @@
     <h2>Settings</h2>
 
     <label class="setting-row checkbox-row">
-      <span class="setting-label">Sound alerts</span>
-      <input type="checkbox" id="setSoundAlerts" />
+      <span class="setting-label">Speak speed</span>
+      <input type="checkbox" id="setSpeak" />
     </label>
 
     <label class="setting-row">
-      <span class="setting-label">Alert tone <span class="setting-value" id="valTonePitch"></span></span>
-      <input type="range" id="setTonePitch" min="500" max="2500" step="25" />
-      <span class="setting-help">Pitch of the over-limit tone. Release the slider to preview it.</span>
+      <span class="setting-label">Announce every <span class="setting-value" id="valInterval"></span></span>
+      <input type="range" id="setInterval" min="1" max="60" step="1" />
+      <span class="setting-help">How often the current speed is spoken, as just the number. Nothing is spoken while stopped.</span>
     </label>
-
-    <label class="setting-row">
-      <span class="setting-label">Look-ahead <span class="setting-value" id="valLookahead"></span></span>
-      <input type="range" id="setLookahead" min="0" max="6" step="0.5" />
-      <span class="setting-help">How far ahead to estimate your speed while accelerating, to make up for GPS lag. 0 s uses the measured speed only.</span>
-    </label>
-
-    <label class="setting-row checkbox-row">
-      <span class="setting-label">Voice mode</span>
-      <input type="checkbox" id="setAutoMode" />
-    </label>
-    <span class="setting-help test-mode-help">No speed buttons: you hear a warning once when you reach 1 mph below, at, or 1 mph above 20, 30, 40, 50, 60 or 70 mph, and advice when you drop back below it.</span>
-
-    <div class="setting-row" id="voiceRecorder">
-      <span class="setting-label">Voice messages</span>
-      <span class="setting-help">Record your own warning and advice for each speed. Anything not recorded is spoken by the device voice.</span>
-      <div id="voiceRows" class="voice-rows"></div>
-    </div>
 
     <label class="setting-row checkbox-row">
       <span class="setting-label">Keep screen awake</span>
@@ -104,7 +73,7 @@
       <span class="setting-label">Test mode</span>
       <input type="checkbox" id="setTestMode" />
     </label>
-    <span class="setting-help test-mode-help">Drive the speed with up/down buttons instead of GPS, so you can check the warnings without a car.</span>
+    <span class="setting-help test-mode-help">Drive the speed with buttons instead of GPS, so you can check the dial and voice without a car.</span>
 
     <div class="settings-actions">
       <button id="settingsCloseBtn" class="btn primary">Done</button>
