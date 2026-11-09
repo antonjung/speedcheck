@@ -13,6 +13,7 @@ const MAX_ANNOUNCE_MPH = 100; // highest recorded clip
 
 const DEFAULT_SETTINGS = {
   intervalSec: 10, // seconds between spoken speed announcements
+  muted: false, // "Silent" switch: no spoken announcements at all
   silentBelowMph: 0, // no announcements while slower than this
 };
 
@@ -49,6 +50,7 @@ const testSpeedUp10 = document.getElementById("testSpeedUp10");
 
 const setIntervalEl = document.getElementById("setInterval");
 const valInterval = document.getElementById("valInterval");
+const setMuted = document.getElementById("setMuted");
 const setSilent = document.getElementById("setSilent");
 const valSilent = document.getElementById("valSilent");
 
@@ -127,11 +129,25 @@ function buildDial() {
   dialEl.append(needleEl, svgEl("circle", { class: "hub", cx: 100, cy: 100, r: 6 }));
 }
 
+// Reaching the "silent below" speed from under it announces straight away.
+let wasBelowSilent = true;
+
+function checkSilentCrossing() {
+  const threshold = settings.silentBelowMph;
+  const below = threshold > 0 && currentMph() < threshold;
+  if (threshold > 0 && wasBelowSilent && !below && hasSpeedFix) {
+    announceSpeed();
+    restartAnnounceTimer();
+  }
+  wasBelowSilent = below || threshold === 0;
+}
+
 function renderSpeed() {
   const mph = currentMph();
   speedValueEl.textContent = Math.round(mph).toString();
   const frac = Math.max(0, Math.min(1, mph / DIAL_MAX_MPH));
   needleEl.style.transform = `rotate(${DIAL_START_DEG + frac * DIAL_SWEEP_DEG}deg)`;
+  checkSilentCrossing();
 }
 
 function renderGpsInfo(accuracyM) {
@@ -184,7 +200,7 @@ async function loadClip(n) {
 async function announceSpeed() {
   if (!hasSpeedFix) return;
   const n = Math.min(Math.round(currentMph()), MAX_ANNOUNCE_MPH);
-  if (n < 1 || currentMph() < settings.silentBelowMph) return;
+  if (settings.muted || n < 1 || currentMph() < settings.silentBelowMph) return;
   try {
     const buffer = await loadClip(n);
     if (!buffer) return;
@@ -293,6 +309,7 @@ document.addEventListener("visibilitychange", () => {
 // ---------- Settings panel ----------
 
 function initControls() {
+  setMuted.checked = settings.muted;
   setIntervalEl.value = settings.intervalSec;
   valInterval.textContent = `${settings.intervalSec} s`;
   setSilent.value = settings.silentBelowMph;
@@ -302,6 +319,13 @@ function initControls() {
 setSilent.addEventListener("input", () => {
   settings.silentBelowMph = parseInt(setSilent.value, 10);
   valSilent.textContent = `${settings.silentBelowMph} mph`;
+  saveSettings();
+  // Re-arm against the new threshold without announcing.
+  wasBelowSilent = settings.silentBelowMph === 0 || currentMph() < settings.silentBelowMph;
+});
+
+setMuted.addEventListener("change", () => {
+  settings.muted = setMuted.checked;
   saveSettings();
 });
 
