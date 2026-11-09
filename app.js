@@ -360,7 +360,10 @@ dialWrap.addEventListener("pointerdown", () => {
   }, LONG_PRESS_MS);
 });
 for (const type of ["pointerup", "pointercancel", "pointerleave"]) dialWrap.addEventListener(type, cancelLongPress);
-dialWrap.addEventListener("contextmenu", (e) => e.preventDefault());
+// No copy / select / share callouts anywhere in the app.
+for (const type of ["contextmenu", "selectstart", "dragstart"]) {
+  document.addEventListener(type, (e) => e.preventDefault());
+}
 
 // ---------- Startup ----------
 
