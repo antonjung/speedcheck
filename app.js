@@ -336,6 +336,11 @@ setSilent.addEventListener("input", () => {
 setMuted.addEventListener("change", () => {
   settings.muted = setMuted.checked;
   saveSettings();
+  if (!settings.muted) {
+    // Coming out of silent mode: announce now and restart the interval.
+    announceSpeed();
+    restartAnnounceTimer();
+  }
 });
 
 setIntervalEl.addEventListener("input", () => {
