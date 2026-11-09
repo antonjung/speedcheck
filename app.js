@@ -12,10 +12,7 @@ const DIAL_SWEEP_DEG = 270;
 const MAX_ANNOUNCE_MPH = 100; // highest recorded clip
 
 const DEFAULT_SETTINGS = {
-  speak: true,
   intervalSec: 10, // seconds between spoken speed announcements
-  wakeLock: true,
-  testMode: false, // drive speed manually instead of via GPS
 };
 
 function loadSettings() {
@@ -28,6 +25,7 @@ function loadSettings() {
 }
 
 const settings = loadSettings();
+let testMode = false; // drive speed manually instead of via GPS; toggled by holding the dial
 
 function saveSettings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -48,11 +46,8 @@ const testSpeedUp = document.getElementById("testSpeedUp");
 const testSpeedDown10 = document.getElementById("testSpeedDown10");
 const testSpeedUp10 = document.getElementById("testSpeedUp10");
 
-const setSpeak = document.getElementById("setSpeak");
 const setIntervalEl = document.getElementById("setInterval");
 const valInterval = document.getElementById("valInterval");
-const setWakeLock = document.getElementById("setWakeLock");
-const setTestMode = document.getElementById("setTestMode");
 
 // ---------- State ----------
 
@@ -184,7 +179,7 @@ async function loadClip(n) {
 }
 
 async function announceSpeed() {
-  if (!settings.speak || !hasSpeedFix) return;
+  if (!hasSpeedFix) return;
   const n = Math.min(Math.round(currentMph()), MAX_ANNOUNCE_MPH);
   if (n < 1) return;
   try {
@@ -244,7 +239,7 @@ function onPositionError(err) {
 }
 
 function startTracking() {
-  if (settings.testMode) {
+  if (testMode) {
     startTestTracking();
     return;
   }
@@ -277,7 +272,7 @@ setInterval(() => {
 // ---------- Wake Lock ----------
 
 async function requestWakeLock() {
-  if (!settings.wakeLock || !("wakeLock" in navigator)) return;
+  if (!("wakeLock" in navigator)) return;
   try {
     wakeLockSentinel = await navigator.wakeLock.request("screen");
   } catch (err) {
@@ -285,16 +280,9 @@ async function requestWakeLock() {
   }
 }
 
-function releaseWakeLock() {
-  if (wakeLockSentinel) {
-    wakeLockSentinel.release().catch(() => {});
-    wakeLockSentinel = null;
-  }
-}
-
 document.addEventListener("visibilitychange", () => {
   // The sentinel is released by the browser whenever the tab goes out of view.
-  if (document.visibilityState === "visible" && settings.wakeLock) {
+  if (document.visibilityState === "visible") {
     requestWakeLock();
   }
 });
@@ -302,18 +290,9 @@ document.addEventListener("visibilitychange", () => {
 // ---------- Settings panel ----------
 
 function initControls() {
-  setSpeak.checked = settings.speak;
   setIntervalEl.value = settings.intervalSec;
   valInterval.textContent = `${settings.intervalSec} s`;
-  setWakeLock.checked = settings.wakeLock;
-  setTestMode.checked = settings.testMode;
 }
-
-setSpeak.addEventListener("change", () => {
-  settings.speak = setSpeak.checked;
-  saveSettings();
-  ensureAudioCtx();
-});
 
 setIntervalEl.addEventListener("input", () => {
   settings.intervalSec = parseInt(setIntervalEl.value, 10);
@@ -322,17 +301,10 @@ setIntervalEl.addEventListener("input", () => {
   restartAnnounceTimer();
 });
 
-setWakeLock.addEventListener("change", () => {
-  settings.wakeLock = setWakeLock.checked;
-  saveSettings();
-  if (settings.wakeLock) requestWakeLock();
-  else releaseWakeLock();
-});
-
 // ---------- Test mode ----------
 
 function applyTestModeUI() {
-  testControls.hidden = !settings.testMode;
+  testControls.hidden = !testMode;
   renderSpeed();
 }
 
@@ -350,31 +322,45 @@ testSpeedUp.addEventListener("click", () => nudgeTestSpeed(1));
 testSpeedDown10.addEventListener("click", () => nudgeTestSpeed(-10));
 testSpeedUp10.addEventListener("click", () => nudgeTestSpeed(10));
 
-setTestMode.addEventListener("change", () => {
-  const wasTestMode = settings.testMode;
-  settings.testMode = setTestMode.checked;
-  saveSettings();
-
-  if (wasTestMode !== settings.testMode) {
-    if (settings.testMode) {
-      // Switch live from real GPS to manual test control.
-      if (watchId != null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
-      startTestTracking();
-    } else {
-      // Switch back to real GPS; wait for a fresh fix before trusting the reading.
-      gpsInfo.classList.remove("test-mode");
-      gpsInfo.textContent = "GPS —";
-      hasSpeedFix = false;
-      statusMessageEl.textContent = "Waiting for GPS…";
-      startTracking();
+function setTestMode(on) {
+  if (on === testMode) return;
+  testMode = on;
+  if (testMode) {
+    // Switch live from real GPS to manual test control.
+    if (watchId != null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
     }
+    startTestTracking();
+  } else {
+    // Switch back to real GPS; wait for a fresh fix before trusting the reading.
+    gpsInfo.classList.remove("test-mode");
+    gpsInfo.textContent = "GPS —";
+    hasSpeedFix = false;
+    displaySpeedMps = 0;
+    statusMessageEl.textContent = "Waiting for GPS…";
+    startTracking();
   }
-
   applyTestModeUI();
+}
+
+// Hold the dial for 3 seconds to switch test mode on or off.
+const LONG_PRESS_MS = 3000;
+let longPressTimer = null;
+const dialWrap = document.querySelector(".dial-wrap");
+function cancelLongPress() {
+  clearTimeout(longPressTimer);
+  longPressTimer = null;
+}
+dialWrap.addEventListener("pointerdown", () => {
+  cancelLongPress();
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    setTestMode(!testMode);
+  }, LONG_PRESS_MS);
 });
+for (const type of ["pointerup", "pointercancel", "pointerleave"]) dialWrap.addEventListener(type, cancelLongPress);
+dialWrap.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // ---------- Startup ----------
 
@@ -409,7 +395,7 @@ applyTestModeUI();
 restartAnnounceTimer();
 statusMessageEl.textContent = "Waiting for GPS…";
 
-if (!settings.testMode && !("geolocation" in navigator)) {
+if (!testMode && !("geolocation" in navigator)) {
   statusMessageEl.textContent = "This browser doesn't support geolocation.";
 } else {
   startTracking();

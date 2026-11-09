@@ -48,25 +48,10 @@
   </div>
 
   <div class="controls">
-    <label class="setting-row checkbox-row">
-      <span class="setting-label">Speak speed</span>
-      <input type="checkbox" id="setSpeak" />
-    </label>
-
-    <label class="setting-row">
-      <span class="setting-label">Announce every <span class="setting-value" id="valInterval"></span></span>
-      <input type="range" id="setInterval" min="1" max="60" step="1" />
-    </label>
-
-    <label class="setting-row checkbox-row">
-      <span class="setting-label">Keep screen awake</span>
-      <input type="checkbox" id="setWakeLock" />
-    </label>
-
-    <label class="setting-row checkbox-row">
-      <span class="setting-label">Test mode</span>
-      <input type="checkbox" id="setTestMode" />
-    </label>
+    <span class="setting-label">Announce every <span class="setting-value" id="valInterval"></span></span>
+    <div class="slider-box">
+      <input type="range" id="setInterval" min="1" max="60" step="1" aria-label="Announce interval in seconds" />
+    </div>
   </div>
 
   <p class="build-version" id="buildVersion"></p>
