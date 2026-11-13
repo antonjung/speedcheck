@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   intervalSec: 10, // seconds between spoken speed announcements
   muted: false, // "Silent" switch: no spoken announcements at all
   silentBelowMph: 0, // no announcements while slower than this
+  volume: 100, // announcement volume, 0-100
 };
 
 function loadSettings() {
@@ -53,6 +54,8 @@ const valInterval = document.getElementById("valInterval");
 const setMuted = document.getElementById("setMuted");
 const setSilent = document.getElementById("setSilent");
 const valSilent = document.getElementById("valSilent");
+const setVolume = document.getElementById("setVolume");
+const valVolume = document.getElementById("valVolume");
 
 // ---------- State ----------
 
@@ -215,7 +218,10 @@ async function announceSpeed() {
     if (!buffer) return;
     const src = audioCtx.createBufferSource();
     src.buffer = buffer;
-    src.connect(audioCtx.destination);
+    const gain = audioCtx.createGain();
+    gain.gain.value = settings.volume / 100;
+    src.connect(gain);
+    gain.connect(audioCtx.destination);
     src.start();
   } catch (err) {
     /* clip unavailable (e.g. offline and not cached): stay silent */
@@ -323,7 +329,15 @@ function initControls() {
   valInterval.textContent = `${settings.intervalSec} s`;
   setSilent.value = settings.silentBelowMph;
   valSilent.textContent = `${settings.silentBelowMph} mph`;
+  setVolume.value = settings.volume;
+  valVolume.textContent = `${settings.volume}%`;
 }
+
+setVolume.addEventListener("input", () => {
+  settings.volume = parseInt(setVolume.value, 10);
+  valVolume.textContent = `${settings.volume}%`;
+  saveSettings();
+});
 
 setSilent.addEventListener("input", () => {
   settings.silentBelowMph = parseInt(setSilent.value, 10);
