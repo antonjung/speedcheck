@@ -13,7 +13,6 @@ const MAX_ANNOUNCE_MPH = 100; // highest recorded clip
 
 const DEFAULT_SETTINGS = {
   intervalSec: 10, // seconds between spoken speed announcements
-  muted: false, // "Silent" switch: no spoken announcements at all
   silentBelowMph: 0, // no announcements while slower than this
   volume: 100, // announcement volume, 0-100
 };
@@ -51,7 +50,6 @@ const testSpeedUp10 = document.getElementById("testSpeedUp10");
 
 const setIntervalEl = document.getElementById("setInterval");
 const valInterval = document.getElementById("valInterval");
-const setMuted = document.getElementById("setMuted");
 const setSilent = document.getElementById("setSilent");
 const valSilent = document.getElementById("valSilent");
 const setVolume = document.getElementById("setVolume");
@@ -211,7 +209,7 @@ const lastSpokenAt = new Map(); // number -> time it was last announced
 async function announceSpeed() {
   if (!hasSpeedFix) return;
   const n = Math.min(Math.round(currentMph()), MAX_ANNOUNCE_MPH);
-  if (settings.muted || n < 1 || currentMph() < settings.silentBelowMph) return;
+  if (n < 1 || currentMph() < settings.silentBelowMph) return;
   lastSpokenAt.set(n, Date.now());
   try {
     const buffer = await loadClip(n);
@@ -324,7 +322,6 @@ document.addEventListener("visibilitychange", () => {
 // ---------- Settings panel ----------
 
 function initControls() {
-  setMuted.checked = settings.muted;
   setIntervalEl.value = settings.intervalSec;
   valInterval.textContent = `${settings.intervalSec} s`;
   setSilent.value = settings.silentBelowMph;
@@ -345,16 +342,6 @@ setSilent.addEventListener("input", () => {
   saveSettings();
   // Re-arm against the new threshold without announcing.
   wasBelowSilent = settings.silentBelowMph === 0 || currentMph() < settings.silentBelowMph;
-});
-
-setMuted.addEventListener("change", () => {
-  settings.muted = setMuted.checked;
-  saveSettings();
-  if (!settings.muted) {
-    // Coming out of silent mode: announce now and restart the interval.
-    announceSpeed();
-    restartAnnounceTimer();
-  }
 });
 
 setIntervalEl.addEventListener("input", () => {
