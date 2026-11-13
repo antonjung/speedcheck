@@ -434,12 +434,59 @@ function describeGeoError(err) {
 // until the context is actually running (iOS Safari varies on which gesture it
 // accepts), and re-arm if the OS suspends it again after backgrounding.
 for (const type of ["pointerdown", "touchend", "click", "keydown"]) {
-  document.addEventListener(type, () => ensureAudioCtx());
+  document.addEventListener(type, () => {
+    ensureAudioCtx();
+    startKeepAlive();
+  });
+}
+
+// Browsers suspend Web Audio (and throttle timers) once the page is in the
+// background or the screen locks. A looping silent <audio> element registers
+// the page as a media player, which keeps the audio session and timers alive
+// so announcements stay audible.
+let keepAliveEl = null;
+
+function makeSilentWavUrl() {
+  const rate = 8000;
+  const samples = rate; // 1 second
+  const buf = new ArrayBuffer(44 + samples);
+  const v = new DataView(buf);
+  const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF");
+  v.setUint32(4, 36 + samples, true);
+  str(8, "WAVEfmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate, true);
+  v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true);
+  str(36, "data");
+  v.setUint32(40, samples, true);
+  new Uint8Array(buf, 44).fill(128); // 8-bit silence
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+}
+
+function startKeepAlive() {
+  if (!keepAliveEl) {
+    keepAliveEl = new Audio(makeSilentWavUrl());
+    keepAliveEl.loop = true;
+    keepAliveEl.setAttribute("playsinline", "");
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: "Speed Guard", artist: "Announcing speed" });
+    }
+  }
+  if (keepAliveEl.paused) {
+    const p = keepAliveEl.play();
+    if (p && p.catch) p.catch(() => {});
+  }
 }
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && audioCtx && audioCtx.state !== "running") {
     audioCtx.resume().catch(() => {});
   }
+  if (!document.hidden && keepAliveEl) startKeepAlive();
 });
 
 buildDial();
